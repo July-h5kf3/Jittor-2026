@@ -194,3 +194,47 @@ def get_knn_idx(x, y, k, offset=0):
         dist = ((x.unsqueeze(2) - y.unsqueeze(1)) ** 2).sum(-1)
         _, idx = jt.topk(dist, k=K, dim=-1, largest=False)
     return idx[:, :, offset:]
+
+
+def _feature_edge_index(z, k):
+    """Build a directed kNN edge_index in FEATURE space for a batched (B,N,C) tensor.
+    Returns (2, B*N*k) with flattened node ids. dst=center, src=neighbour."""
+    B, N, _ = z.shape
+    knn_idx = get_knn_idx(z, z, k + 1)[:, :, 1:]          # (B,N,k), drop self
+    base = (jt.arange(B) * N).reshape(B, 1, 1)
+    src = (knn_idx + base).reshape(-1)
+    dst = (jt.arange(N).reshape(1, N, 1).broadcast((B, N, k)) + base).reshape(-1)
+    return jt.stack([src, dst], dim=0)
+
+
+class GraphConvDecoder(nn.Module):
+    """HybridPF-style dynamic graph-convolutional decoder.
+
+    Replaces the per-point MLP decoder with EdgeConv layers that aggregate
+    topological information in latent feature space (dynamic kNN graph rebuilt
+    per layer). Same I/O contract as Decoder: returns (B*N, out_dim) for out_dim>1
+    and (B,1,1) for out_dim==1 (global scalar via max-pool + sigmoid).
+    """
+
+    def __init__(self, z_dim, dim, out_dim, hidden_size, k=8):
+        super().__init__()
+        self.out_dim = out_dim
+        self.k = k
+        self.conv1 = EdgeConv(z_dim, hidden_size)
+        self.conv2 = EdgeConv(hidden_size, hidden_size, activation=None)
+        self.lin_out = nn.Linear(hidden_size, out_dim)
+        self.dropout = nn.Dropout(0.1)
+
+    def execute(self, c, B=None, N=None):
+        z = c.reshape(B, N, -1)
+        ei = _feature_edge_index(z, self.k)
+        x = self.conv1(z.reshape(B * N, -1), ei)
+        x = self.dropout(x)
+        ei2 = _feature_edge_index(x.reshape(B, N, -1), self.k)  # dynamic: rebuild
+        x = self.conv2(x, ei2)
+        x = self.dropout(x)
+        if self.out_dim == 1:
+            x = x.reshape(B, N, -1)
+            x = jt.max(x, dim=1, keepdims=True)        # (B,1,H)
+            return jt.sigmoid(self.lin_out(x))         # (B,1,1)
+        return self.lin_out(x)                          # (B*N, out_dim)

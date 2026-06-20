@@ -21,7 +21,7 @@ import jittor as jt
 import numpy as np
 from jittor import nn
 
-from .feature import FeatureExtraction, Decoder
+from .feature import FeatureExtraction, Decoder, GraphConvDecoder
 from .spec import ModelSpec
 from .vm import patch_based_denoise
 from ..data.asset import Asset
@@ -32,19 +32,27 @@ def get_random_indices(n, m):
     return np.random.permutation(n)[:m]
 
 
+def _make_decoder(decoder_type, z_dim, out_dim, hidden_size):
+    """HybridPF dynamic graph-conv decoder vs the plain MLP decoder."""
+    if decoder_type == 'graph':
+        return GraphConvDecoder(z_dim=z_dim, dim=3, out_dim=out_dim, hidden_size=hidden_size)
+    return Decoder(z_dim=z_dim, dim=3, out_dim=out_dim, hidden_size=hidden_size)
+
+
 class VelocityNet(nn.Module):
     """Encoder (EdgeConv) + Decoder predicting a 3D flow direction."""
 
-    def __init__(self, frame_knn, feat_embedding_dim, decoder_hidden_dim):
+    def __init__(self, frame_knn, feat_embedding_dim, decoder_hidden_dim, decoder_type='mlp'):
         super().__init__()
         self.encoder = FeatureExtraction(k=frame_knn, input_dim=3, embedding_dim=feat_embedding_dim)
-        self.decoder = Decoder(z_dim=self.encoder.embedding_dim, dim=3, out_dim=3, hidden_size=decoder_hidden_dim)
+        self.decoder = _make_decoder(decoder_type, self.encoder.embedding_dim, 3, decoder_hidden_dim)
 
     def execute(self, x):
         B, N, d = x.shape
         feat = self.encoder(x)
         F_dim = feat.shape[2]
-        return self.decoder(c=feat.reshape(-1, F_dim)).reshape(B, N, d)
+        # pass B,N so the graph decoder can rebuild the (B,N,F) structure (MLP ignores them)
+        return self.decoder(c=feat.reshape(-1, F_dim), B=B, N=N).reshape(B, N, d)
 
 
 class StraightPCFModule(ModelSpec):
@@ -61,9 +69,10 @@ class StraightPCFModule(ModelSpec):
         edim = cfg['feat_embedding_dim']
         hdim = cfg['decoder_hidden_dim']
 
+        self.decoder_type = cfg.get('decoder_type', 'mlp')  # 'mlp' | 'graph' (HybridPF)
         self.num_modules = 1 if self.stage == 'vm' else cfg.get('num_modules', 2)
         self.velocity_nets = nn.ModuleList(
-            [VelocityNet(self.frame_knn, edim, hdim) for _ in range(self.num_modules)]
+            [VelocityNet(self.frame_knn, edim, hdim, self.decoder_type) for _ in range(self.num_modules)]
         )
 
         if self.stage == 'spcf':
@@ -72,7 +81,7 @@ class StraightPCFModule(ModelSpec):
                 k=self.frame_knn, input_dim=3, embedding_dim=edim,
                 distance_estimation=cfg.get('distance_estimation', True),
             )
-            self.decoder = Decoder(z_dim=edim, dim=3, out_dim=1, hidden_size=hdim)
+            self.decoder = _make_decoder(self.decoder_type, edim, 1, hdim)
 
     # ----- checkpoint chaining between stages -----
     def init_from_stage(self, ckpt_path: str):
