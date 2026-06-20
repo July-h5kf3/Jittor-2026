@@ -40,10 +40,14 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, required=False, default=123)
     args = parser.parse_args()
     
-    # seed all
-    jt.set_global_seed(args.seed)
-    np.random.seed(args.seed)
-    random.seed(args.seed)
+    # seed all -- offset by MPI rank so each DDP rank draws DIFFERENT samples.
+    # Without this every rank shares args.seed and (since the dataset is not
+    # MPI-sharded) processes identical data, making the extra GPUs redundant.
+    rank = int(getattr(jt, 'rank', 0) or 0)
+    seed = args.seed + rank
+    jt.set_global_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
     
     task = load('task', args.task)
     mode = task['mode']
