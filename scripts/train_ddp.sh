@@ -28,6 +28,9 @@ fi
 export CUDA_VISIBLE_DEVICES
 export use_mpi="${use_mpi:-1}"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}"
+if [[ -d /root/data-tmp ]]; then
+  export cache_path="${cache_path:-/root/data-tmp/.cache/jittor}"
+fi
 
 if [[ -n "${MPIRUN:-}" ]]; then
   mpirun_bin="$MPIRUN"
