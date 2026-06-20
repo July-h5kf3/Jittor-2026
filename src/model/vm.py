@@ -244,10 +244,16 @@ def patch_based_denoise(model: VelocityModule, pcl_noisy, patch_size=1000, seed_
     
     patches_denoised = jt.concat(patches_denoised, dim=0)
     patches_denoised = patches_denoised + seed_expand
+    # Reassemble exactly N points, one per input point in input order. A point not
+    # covered by its best patch (rare FPS/knn coverage gap) would otherwise yield an
+    # empty mask and be dropped, making the output smaller than the input. Fall back
+    # to the original (un-denoised) point so the output count always equals N.
+    orig = pcl_noisy[0]  # (N, 3)
     pcl_out = []
     for pidx in range(N):
         patch_id = best_weights_idx[pidx].item()
         mask = (point_idxs[patch_id] == pidx)
-        pcl_out.append(patches_denoised[patch_id][mask])
+        sel = patches_denoised[patch_id][mask]
+        pcl_out.append(sel[0:1] if sel.shape[0] > 0 else orig[pidx:pidx+1])
     pcl_out = jt.concat(pcl_out, dim=0)
     return pcl_out
