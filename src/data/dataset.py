@@ -214,47 +214,44 @@ class PCDataset(Dataset):
             assert x not in vis, f"multiple keys found: {x}"
             vis[x] = True
         
+        # NOTE: collate with numpy ONLY. This runs inside dataloader worker
+        # processes; creating jt.Var here makes 12-24 workers contend with the
+        # training process's jittor runtime and throttles data throughput.
+        # Conversion to jt.Var happens on the main process at the model boundary
+        # (VelocityModule.training_step / predict_step).
+        def _to_np(v1, action: str, key):
+            if isinstance(v1, ndarray):
+                return v1
+            if isinstance(v1, jt.Var):
+                return v1.numpy()
+            raise ValueError(f"cannot {action} non-tensor type of key {key}, type: {type(v1)}")
+
         for k, v in processed_batch[0].items():
             if k == "cat":
                 assert isinstance(v, dict)
                 for k1 in v.keys():
                     check(k1)
-                    tensors_cat[k1] = []
-                    for i in range(len(processed_batch)):
-                        v1 = processed_batch[i]['cat'][k1]
-                        if isinstance(v1, ndarray):
-                            v1 = jt.array(v1)
-                        elif isinstance(v1, jt.Var):
-                            v1 = v1
-                        else:
-                            raise ValueError(f"cannot concatenate non-tensor type of key {k1}, type: {type(v1)}")
-                        tensors_cat[k1].append(v1)
+                    tensors_cat[k1] = [_to_np(processed_batch[i]['cat'][k1], "concatenate", k1)
+                                       for i in range(len(processed_batch))]
             elif k == "non":
                 assert isinstance(v, dict)
                 for k1 in v.keys():
                     check(k1)
-                    non_tensors[k1] = []
-                    for i in range(len(processed_batch)):
-                        v1 = processed_batch[i]['non'][k1]
-                        if isinstance(v1, ndarray):
-                            v1 = jt.array(v1)
-                        non_tensors[k1].append(v1)
+                    non_tensors[k1] = [processed_batch[i]['non'][k1]
+                                       for i in range(len(processed_batch))]
             else:
                 check(k)
-                tensors_stack[k] = []
-                for i in range(len(processed_batch)):
-                    v1 = processed_batch[i][k]
-                    if isinstance(v1, ndarray):
-                        v1 = jt.array(v1)
-                    elif isinstance(v1, jt.Var):
-                        v1 = v1
-                    else:
-                        raise ValueError(f"cannot stack type of key {k}, type: {type(v1)}")
-                    tensors_stack[k].append(v1)
-        
-        collated_stack = {k: jt.stack(v) for k, v in tensors_stack.items()}
-        collated_cat = {k: jt.concat(v, dim=1) for k, v in tensors_cat.items()}
-        
+                tensors_stack[k] = [_to_np(processed_batch[i][k], "stack", k)
+                                    for i in range(len(processed_batch))]
+
+        # Downcast float64 -> float32: jittor's hand-written CUDA ops (e.g. knn)
+        # only support float32, and this matches the dtype the old jt.array-based
+        # collate produced. Also halves the worker->main IPC payload.
+        def _f32(a):
+            return a.astype(np.float32, copy=False) if a.dtype == np.float64 else a
+        collated_stack = {k: _f32(np.stack(v)) for k, v in tensors_stack.items()}
+        collated_cat = {k: _f32(np.concatenate(v, axis=1)) for k, v in tensors_cat.items()}
+
         collated_batch = {
             **collated_stack,
             **collated_cat,

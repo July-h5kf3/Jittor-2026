@@ -91,10 +91,11 @@ class VelocityModule(ModelSpec):
         return pcl_next, None
     
     def training_step(self, batch: Dict) -> Dict:
+        # tensors arrive as numpy from the worker collate; move to jittor here
         patch_size = batch['pc_noisy'].shape[-2]
-        pc_noisy = batch['pc_noisy'].reshape(-1, patch_size, 3)
-        pc_mix = batch['pc_mix'].reshape(-1, patch_size, 3)
-        pc_clean = batch['pc_clean'].reshape(-1, patch_size, 3)
+        pc_noisy = jt.array(batch['pc_noisy']).reshape(-1, patch_size, 3)
+        pc_mix = jt.array(batch['pc_mix']).reshape(-1, patch_size, 3)
+        pc_clean = jt.array(batch['pc_clean']).reshape(-1, patch_size, 3)
         loss = self.get_supervised_loss(
             pc_noisy=pc_noisy,
             pc_mix=pc_mix,
@@ -108,6 +109,8 @@ class VelocityModule(ModelSpec):
     @jt.no_grad()
     def predict_step(self, batch: Dict) -> List[Dict]:
         pc_noisy_batch = batch['pc_noisy']
+        if not isinstance(pc_noisy_batch, jt.Var):
+            pc_noisy_batch = jt.array(pc_noisy_batch)
         assert pc_noisy_batch.ndim == 3
         
         num_steps = 1
