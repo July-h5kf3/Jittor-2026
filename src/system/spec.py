@@ -340,16 +340,27 @@ class DummySystem():
         if not self.distributed.enabled:
             return self._run_validation_and_save_epoch(epoch)
 
+        # Only rank0 runs validation + checkpointing; other ranks skip the body.
+        stop_flag = {'v': 0}
         @jt.single_process_scope(rank=0)
         def _rank0_only():
             should_stop = self._run_validation_and_save_epoch(epoch)
             self._write_early_stop_signal(should_stop)
+            stop_flag['v'] = 1 if should_stop else 0
 
         _rank0_only()
+
+        # Broadcast rank0's stop decision to ALL ranks via an MPI collective.
+        # A filesystem signal alone is unreliable: if a non-zero rank misses it
+        # (cross-process visibility race), that rank marches into the next epoch
+        # and deadlocks at the gradient all-reduce while rank0 has already exited
+        # the loop. Every rank reaches this all-reduce; only rank0 contributes a
+        # non-zero flag, so all ranks agree and break in lockstep.
+        flag = jt.array([float(stop_flag['v'])]).float32().mpi_all_reduce("add")
         sync_all = getattr(jt, 'sync_all', None)
         if callable(sync_all):
             sync_all()
-        return os.path.exists(self._early_stop_signal_path())
+        return bool(flag.item() >= 0.5)
     
     def train(self):
         assert self.optimizer is not None, "optimizer is None, cannot train"
