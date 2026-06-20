@@ -16,6 +16,10 @@ results/
 tmp_predict/
 smoke_logs/
 train_logs/
+bench_logs/
+configs/data/train_bench*.yaml
+configs/task/bench*.yaml
+configs/system/bench.yaml
 train.pid
 
 # Download/setup leftovers
