@@ -27,15 +27,41 @@ class LazyAsset(ABC):
 @dataclass
 class ObjLazyAsset(LazyAsset):
     # load an obj file as an asset
-    def load(self) -> 'Asset':
+    def _cache_path(self) -> str:
+        # store the parsed mesh next to the obj to skip text parsing on reload
+        return self.path + '.cache.npz'
+
+    def _load_mesh(self):
+        # returns (vertices, faces); uses an .npz cache to avoid re-parsing obj
+        cache_path = self._cache_path()
+        if os.path.exists(cache_path):
+            try:
+                with np.load(cache_path) as d:
+                    return d['vertices'], d['faces']
+            except Exception:
+                pass  # corrupted/partial cache -> fall back to parsing
         mesh = trimesh.load(self.path, process=False)
         if isinstance(mesh, trimesh.Scene):
             mesh = trimesh.util.concatenate(tuple(mesh.geometry.values()))
+        vertices = np.asarray(mesh.vertices) # type: ignore
+        faces = np.asarray(mesh.faces) # type: ignore
+        try:
+            # atomic write so concurrent dataloader workers never read a partial file
+            # keep the .npz suffix so np.savez does not append another one
+            tmp = f"{cache_path}.{os.getpid()}.tmp.npz"
+            np.savez(tmp, vertices=vertices, faces=faces)
+            os.replace(tmp, cache_path)
+        except Exception:
+            pass  # caching is best-effort; never block training on it
+        return vertices, faces
+
+    def load(self) -> 'Asset':
+        vertices, faces = self._load_mesh()
         asset = Asset(
             path=self.path,
             cls=self.cls,
-            vertices=np.array(mesh.vertices), # type: ignore
-            faces=np.array(mesh.faces), # type: ignore
+            vertices=vertices,
+            faces=faces,
         )
         return asset
 

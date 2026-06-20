@@ -362,15 +362,18 @@ class DummySystem():
             train_dataloader = self.dataset_module.train_dataloader()
             assert train_dataloader is not None, "train_dataloader is None"
             pbar = self._make_pbar(train_dataloader) # type: ignore
-            for batch in pbar:
+            # Reading loss.item() every step forces a host<->device sync that
+            # serializes Jittor's async pipeline; only refresh the bar periodically.
+            log_every = 20
+            for step, batch in enumerate(pbar):
                 self.on_train_batch_start()
                 loss = self.training_step(batch)
                 self.optimizer.zero_grad()
                 self.optimizer.backward(loss)
-                if self.is_primary_process:
-                    pbar.set_description(f"Epoch {epoch}, Loss: {_get_item(loss)}")
                 self.on_before_optimizer_step(self.optimizer)
                 self.optimizer.step()
+                if self.is_primary_process and step % log_every == 0:
+                    pbar.set_description(f"Epoch {epoch}, Loss: {_get_item(loss)}")
                 self.on_train_batch_end()
             self.on_train_epoch_end()
             should_stop = self._run_rank0_epoch_end(epoch)

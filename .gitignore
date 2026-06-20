@@ -5,6 +5,9 @@ SSH.md
 __pycache__/
 *.py[cod]
 
+# Parsed-mesh cache (generated next to .obj files)
+*.cache.npz
+
 # macOS
 .DS_Store
 
