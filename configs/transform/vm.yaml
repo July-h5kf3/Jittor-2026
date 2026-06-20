@@ -40,4 +40,8 @@ validate_transform: &validate_transform
       num_patches: 1
       train_cvm_network: False
 
-predict_transform: *validate_transform
+# Test data is an already-normalized noisy point cloud (npy, no mesh, radius ~1).
+# Inference must NOT sample/add-noise/patch here -- predict_step does its own
+# patch extraction + denoising and the output stays in the input (==GT) coords.
+predict_transform:
+  augments: []

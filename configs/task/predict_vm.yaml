@@ -10,5 +10,8 @@ components:
 
 writer:
   __target__: vm
-  save_dir: results/dataset_test_noisy
+  # asset paths already start with "dataset_test_noisy/", so save_dir is just
+  # "results" -> outputs land in results/dataset_test_noisy/shapenet/<id>/denoised.npy
+  # (matches the README packaging: cd results/dataset_test_noisy && zip -r result.zip shapenet/)
+  save_dir: results
   save_name: denoised
