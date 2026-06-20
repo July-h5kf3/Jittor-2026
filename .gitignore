@@ -1,0 +1,25 @@
+# Local secrets / machine-specific connection notes
+SSH.md
+
+# Python caches
+__pycache__/
+*.py[cod]
+
+# macOS
+.DS_Store
+
+# Data and generated artifacts
+dataset_train/
+dataset_test_noisy/
+experiments/
+results/
+tmp_predict/
+smoke_logs/
+
+# Download/setup leftovers
+setup_data.*
+*.log
+*.pid
+*.zip
+*.tar
+*.tar.gz
