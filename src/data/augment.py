@@ -173,6 +173,52 @@ class AugmentPatch(Augment):
         asset.meta['pc_clean'] = pat_B
         asset.meta['pc_mix'] = pat_t
 
+@dataclass(frozen=True)
+class AugmentPatchSPCF(Augment):
+    """StraightPCF-style patch extraction.
+
+    Emits the StraightPCF training interface (raw, un-centered patches plus a
+    SINGLE scalar time-step t per patch and the t-interpolated seed point):
+      pcl_noisy_L2 (pat_A), pcl_clean (pat_B), seed_points_t, original_time_step.
+    Centering / interpolation is done inside the model loss (see straightpcf.py).
+    """
+
+    patch_size: int
+
+    num_patches: int
+
+    @classmethod
+    def parse(cls, **kwargs) -> 'AugmentPatchSPCF':
+        cls.check_keys(kwargs)
+        return AugmentPatchSPCF(**kwargs)
+
+    def apply(self, asset: Asset, **kwargs):
+        pc = asset.sampled_vertices
+        pc_noisy = asset.sampled_vertices_noisy
+        assert pc is not None and pc_noisy is not None
+        N = pc_noisy.shape[0]
+
+        seed_idx = np.random.permutation(N)[:self.num_patches]      # (P,)
+        seed_points = pc_noisy[seed_idx]                            # (P, 3)
+        tree = cKDTree(pc_noisy)
+        _, nn_idx = tree.query(seed_points, k=self.patch_size)      # (P, M)
+
+        pat_A = pc_noisy[nn_idx]                                    # (P, M, 3) noisy
+        pat_B = pc[nn_idx]                                          # (P, M, 3) clean
+
+        l1, l2 = 1e-8, 1.0
+        t = (l2 - l1) * np.random.rand(self.num_patches) + l1       # (P,) one t per patch
+        tt = t[:, None, None]
+        seed_points_t = tt * pc[seed_idx][:, None, :] + (1 - tt) * pc_noisy[seed_idx][:, None, :]  # (P,1,3)
+
+        if asset.meta is None:
+            asset.meta = {}
+        asset.meta['pcl_noisy_L2'] = pat_A.astype(np.float32)
+        asset.meta['pcl_clean'] = pat_B.astype(np.float32)
+        asset.meta['seed_points_t'] = seed_points_t.astype(np.float32)
+        asset.meta['original_time_step'] = t.astype(np.float32)
+
+
 def get_augments(*args) -> List[Augment]:
     MAP = {
         "sample": AugmentSample,
@@ -180,6 +226,7 @@ def get_augments(*args) -> List[Augment]:
         "add_noise": AugmentAddNoise,
         "linear": AugmentLinear,
         "patch": AugmentPatch,
+        "patch_spcf": AugmentPatchSPCF,
     }
     MAP: Dict[str, type[Augment]]
     augments = []

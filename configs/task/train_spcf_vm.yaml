@@ -1,0 +1,21 @@
+mode: train
+debug: False
+components:
+  data: spcf_train
+  transform: spcf
+  system: spcf_vm
+  model: spcf_vm
+loss:
+  loss: 1.0
+optimizer:
+  __target__: adam
+  lr: 0.0001
+trainer:
+  epochs: 60
+  save_best_only: True
+  early_stopping:
+    enabled: True
+    monitor: val/loss_sum
+    mode: min
+    patience: 8
+    min_delta: 0.000001

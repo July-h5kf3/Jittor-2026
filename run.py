@@ -109,10 +109,15 @@ if __name__ == "__main__":
     
     # load ckpt
     load_ckpt = task.get('load_ckpt', None)
-    
+
     if load_ckpt is not None and model is not None:
         model.load(load_ckpt)
-    
+
+    # chain a previous training stage (StraightPCF: vm -> cvm -> spcf)
+    init_stage_ckpt = task.get('init_stage_ckpt', None)
+    if init_stage_ckpt is not None and model is not None:
+        model.init_from_stage(init_stage_ckpt)
+
     # get writer
     writer_config = task.get('writer', None)
     
