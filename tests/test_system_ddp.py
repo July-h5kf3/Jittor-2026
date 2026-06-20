@@ -105,6 +105,38 @@ class EarlyStoppingTests(unittest.TestCase):
                 ckpt_save_name="checkpoint",
             )
 
+    def test_initial_best_metric_preserves_existing_best_checkpoint(self):
+        with TemporaryDirectory() as tmpdir:
+            fake_jt = SimpleNamespace(in_mpi=False, rank=0, world_size=1, mpi=None)
+            with patch.object(system_spec, "jt", fake_jt):
+                system = system_spec.DummySystem(
+                    dataset_module=SimpleNamespace(),
+                    model=FakeModel(),
+                    trainer_config={
+                        "save_best_only": True,
+                        "initial_best_metric": 0.5,
+                        "initial_best_epoch": 3,
+                        "early_stopping": {
+                            "enabled": True,
+                            "monitor": "val/loss_sum",
+                            "mode": "min",
+                            "patience": 2,
+                        },
+                    },
+                    ckpt_save_dir=tmpdir,
+                    ckpt_save_name="checkpoint",
+                )
+
+            self.assertEqual(system.best_metric, 0.5)
+            self.assertEqual(system.best_epoch, 3)
+            self.assertFalse(system._handle_epoch_checkpoint(epoch=4, metric=0.6))
+            self.assertEqual(system.model.saved_paths, [])
+
+            self.assertFalse(system._handle_epoch_checkpoint(epoch=5, metric=0.4))
+            self.assertEqual(system.best_metric, 0.4)
+            self.assertEqual(system.best_epoch, 5)
+            self.assertEqual(len(system.model.saved_paths), 1)
+
     def test_validation_monitor_value_averages_all_class_loss_sums(self):
         with TemporaryDirectory() as tmpdir:
             system = self.make_system(tmpdir)

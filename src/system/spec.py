@@ -118,8 +118,14 @@ class DummySystem():
         self.early_stopping_patience = int(early_stopping_config.get('patience', 10))
         self.min_delta = float(early_stopping_config.get('min_delta', 0.0))
         self.save_best_only = bool(trainer_config.get('save_best_only', self.early_stopping_enabled))
-        self.best_metric: Optional[float] = None
-        self.best_epoch: Optional[int] = None
+        initial_best_metric = trainer_config.get('initial_best_metric', None)
+        self.best_metric: Optional[float] = (
+            None if initial_best_metric is None else float(initial_best_metric)
+        )
+        initial_best_epoch = trainer_config.get('initial_best_epoch', None)
+        self.best_epoch: Optional[int] = (
+            None if initial_best_epoch is None else int(initial_best_epoch)
+        )
         self._epochs_without_improvement = 0
         
         if optimizer_config is not None and model is not None:
