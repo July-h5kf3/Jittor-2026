@@ -97,8 +97,6 @@ class StraightPCFModule(ModelSpec):
         self.num_train_points = cfg['num_train_points']
         self.dsm_sigma = cfg['dsm_sigma']
         self.tot_its = cfg.get('tot_its', 2)
-        self.spcf_train_unroll_its = int(cfg.get('spcf_train_unroll_its', 1))
-        assert self.spcf_train_unroll_its >= 1, self.spcf_train_unroll_its
         # inference-time knobs (no retraining): distance scale, cloud multi-pass, TTA
         self.predict_alpha = float(cfg.get('predict_alpha', 1.0))
         self.predict_passes = int(cfg.get('predict_passes', 1))
@@ -123,11 +121,6 @@ class StraightPCFModule(ModelSpec):
         self.cvm_condition = cfg.get('cvm_condition', 'none')
         assert self.cvm_condition in ('none', 'time_stage'), self.cvm_condition
         self.velocity_condition_dim = 2 if self.cvm_condition == 'time_stage' else 0
-        self.spcf_train_condition_adapter = bool(
-            cfg.get('spcf_train_condition_adapter', False)
-        )
-        if self.spcf_train_condition_adapter:
-            assert self.velocity_condition_dim > 0
         if self.cvm_dir_target == 'blend':
             self.cvm_stage_velocity_weight = float(cfg.get('cvm_stage_velocity_weight', 0.5))
             assert 0.0 <= self.cvm_stage_velocity_weight <= 1.0, self.cvm_stage_velocity_weight
@@ -233,21 +226,6 @@ class StraightPCFModule(ModelSpec):
     def _velocity(self, mod, points, remaining):
         condition = self._make_velocity_condition(remaining, mod)
         return self.velocity_nets[mod](points, condition=condition)
-
-    def _enable_spcf_condition_adapter_grad(self):
-        """Keep the pretrained velocity trunk frozen while training LDC.
-
-        Jittor's ``Module.eval()`` stops gradients for module parameters. SPCF
-        historically relies on that behavior to freeze velocity nets. LDC must
-        explicitly re-enable only its zero-initialized condition adapters.
-        """
-        if not self.spcf_train_condition_adapter:
-            return
-        for velocity_net in self.velocity_nets:
-            encoder = velocity_net.encoder
-            for layer in (encoder.condition_fc1, encoder.condition_fc2):
-                for parameter in layer.parameters():
-                    parameter.start_grad()
 
     # ----- checkpoint chaining between stages -----
     def init_from_stage(self, ckpt_path: str):
@@ -399,7 +377,6 @@ class StraightPCFModule(ModelSpec):
     def _loss_spcf(self, pcl_clean, pcl_noisy_L2, seeds_t, t):
         # velocity nets frozen-ish (eval mode); train the distance module
         self.velocity_nets.eval()
-        self._enable_spcf_condition_adapter_grad()
         B, N, d = pcl_noisy_L2.shape
         tt = t.reshape(B, 1, 1)
         pcl_noisy = tt * pcl_clean + (1 - tt) * pcl_noisy_L2
@@ -458,24 +435,11 @@ class StraightPCFModule(ModelSpec):
             loss = ((pred_d - ratio) ** 2).mean()
             pred_d = pred_d.reshape(B, 1, 1)
 
-        # Default unroll=1 is exactly the historical SPCF objective. LDC uses
-        # unroll=tot_its so training follows the same repeated small updates as
-        # inference, while conditioning each velocity net on the predicted
-        # remaining distance for the current iteration.
         cur = pcl_noisy_c
-        unroll_its = self.spcf_train_unroll_its
-        for it in range(unroll_its):
-            velocity_remaining = pred_d.detach() * (
-                float(unroll_its - it) / float(unroll_its)
-            )
-            for mod in range(self.num_modules):
-                pred_dir = self._velocity(mod, cur, velocity_remaining)
-                cur = cur + (
-                    (1.0 / unroll_its)
-                    * (1.0 / self.num_modules)
-                    * pred_d
-                    * pred_dir
-                )
+        velocity_remaining = pred_d.detach()
+        for mod in range(self.num_modules):
+            pred_dir = self._velocity(mod, cur, velocity_remaining)
+            cur = cur + (1.0 / self.num_modules) * pred_d * pred_dir
         finetune = 2e2 * ((pcl_clean_c - cur) ** 2).sum(dim=-1).mean()
         spcf_loss = (loss + finetune) / self.dsm_sigma
         if self.lam_dir > 0 or self.lam_mag > 0 or self.lam_edge > 0:

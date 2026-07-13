@@ -32,9 +32,6 @@ class BestConfigTests(unittest.TestCase):
             "train_spcfgfncvm002.yaml",
             "predict_spcfgfncvm002.yaml",
             "predict_spcfgfncvm002_local2.yaml",
-            "train_spcfgfnldc.yaml",
-            "predict_spcfgfnldc.yaml",
-            "predict_spcfgfnldc_local2.yaml",
         ):
             task = OmegaConf.load(ROOT / "configs/task" / name)
             for kind in ("data", "transform", "system", "model"):
@@ -43,22 +40,6 @@ class BestConfigTests(unittest.TestCase):
                     (ROOT / "configs" / kind / f"{component}.yaml").is_file(),
                     f"missing {kind}/{component}.yaml referenced by {name}",
                 )
-
-    def test_ldc_is_zero_risk_finetune_of_best_spcf(self):
-        model = OmegaConf.load(ROOT / "configs/model/spcfgfnldc_spcf.yaml")
-        task = OmegaConf.load(ROOT / "configs/task/train_spcfgfnldc.yaml")
-        self.assertEqual(model.stage, "spcf")
-        self.assertEqual(model.cvm_dir_target, "stage_velocity")
-        self.assertTrue(model.cvm_deep_sup)
-        self.assertEqual(model.cvm_condition, "time_stage")
-        self.assertTrue(model.spcf_train_condition_adapter)
-        self.assertEqual(model.spcf_train_unroll_its, model.tot_its)
-        self.assertEqual(
-            task.load_ckpt,
-            "experiments/spcfgfncvm002_spcf/checkpoint_best.pkl",
-        )
-        self.assertLessEqual(task.optimizer.lr, 0.00001)
-        self.assertEqual(task.trainer.initial_best_metric, 3.794236)
 
     def test_ddp_launcher_uses_an_absolute_python_interpreter(self):
         launcher = (ROOT / "scripts/train_ddp.sh").read_text(encoding="utf-8")
