@@ -7,6 +7,19 @@ NP="${NP:-}"
 TASK="${1:-configs/task/train_vm.yaml}"
 shift || true
 
+if [[ -z "${PYTHON_BIN:-}" ]]; then
+  if command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="$(command -v python)"
+  elif [[ -x /root/miniconda3/bin/python ]]; then
+    PYTHON_BIN="/root/miniconda3/bin/python"
+  elif command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="$(command -v python3)"
+  else
+    echo "Python interpreter not found; set PYTHON_BIN explicitly." >&2
+    exit 1
+  fi
+fi
+
 if [[ -z "${CUDA_VISIBLE_DEVICES:-}" ]]; then
   if command -v nvidia-smi >/dev/null 2>&1; then
     gpu_count="$(nvidia-smi --query-gpu=index --format=csv,noheader | wc -l | tr -d ' ')"
@@ -76,4 +89,4 @@ exec "$mpirun_bin" \
   -x WANDB_MODE -x WANDB_PROJECT -x WANDB_DIR -x WANDB_CONSOLE \
   -x TMPDIR -x TMP -x TEMP -x cache_path \
   -np "$NP" \
-  python run.py --task "$TASK" "$@"
+  "$PYTHON_BIN" run.py --task "$TASK" "$@"

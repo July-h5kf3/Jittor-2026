@@ -60,6 +60,11 @@ class BestConfigTests(unittest.TestCase):
         self.assertLessEqual(task.optimizer.lr, 0.00001)
         self.assertNotIn("initial_best_metric", task.trainer)
 
+    def test_ddp_launcher_uses_an_absolute_python_interpreter(self):
+        launcher = (ROOT / "scripts/train_ddp.sh").read_text(encoding="utf-8")
+        self.assertIn("PYTHON_BIN", launcher)
+        self.assertIn('"$PYTHON_BIN" run.py', launcher)
+
 
 if __name__ == "__main__":
     unittest.main()
