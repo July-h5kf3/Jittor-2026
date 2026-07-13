@@ -24,11 +24,7 @@ rm -f -- "$LDC_DIR/checkpoint_best.pkl"
 
 export HOME="${HOME_OVERRIDE:-/root/data-tmp/jittor_home_cvm002}"
 export cache_path="${cache_path:-/root/data-tmp/.cache/jittor_ldc}"
-export TMPDIR="${TMPDIR:-/root/data-tmp/tmp}"
-export TMP="${TMP:-$TMPDIR}"
-export TEMP="${TEMP:-$TMPDIR}"
 export WANDB_MODE="${WANDB_MODE:-disabled}"
-mkdir -p "$TMPDIR"
 
 echo "[LDC] fine-tune matched-unroll distance conditioning on GPUs $GPU_LIST"
 CUDA_VISIBLE_DEVICES="$GPU_LIST" NP="$NP" \
