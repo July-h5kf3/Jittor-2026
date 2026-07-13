@@ -39,6 +39,9 @@ if [[ ! -f "$LDC_DIR/checkpoint_best.pkl" ]]; then
   cp -f -- "$LDC_DIR/checkpoint_baseline.pkl" "$LDC_DIR/checkpoint_best.pkl"
 fi
 
+# Predictions are reproducible temporary artifacts. Start from a clean
+# directory so a failed rerun cannot mix outputs from different checkpoints.
+rm -rf -- "$RESULT_DIR"
 echo "[LDC] predict localtest2 on GPU $PRED_GPU"
 CUDA_VISIBLE_DEVICES="$PRED_GPU" use_mpi=0 \
   /root/miniconda3/bin/python run.py --task configs/task/predict_spcfgfnldc_local2.yaml
