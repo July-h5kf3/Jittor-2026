@@ -457,7 +457,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     duplicates = [
         item for item in before if item.get("file_name") == archive["file_name"]
     ]
-    if duplicates and not args.allow_duplicate:
+    if duplicates and args.dry_run and not args.allow_duplicate:
+        print(
+            "dry-run warning: an existing submission has the same file name; "
+            "a real upload would be rejected unless --allow-duplicate is passed"
+        )
+    elif duplicates and not args.allow_duplicate:
         raise SubmissionError(
             "an existing submission has the same file name; rename the archive or pass "
             "--allow-duplicate explicitly"

@@ -1,10 +1,13 @@
 import importlib.util
 import io
+import os
 import sys
 import tempfile
 import unittest
 import zipfile
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 
@@ -57,6 +60,46 @@ class SubmitEducoderTests(unittest.TestCase):
             result = submit_educoder.validate_archive(path, 1, 2, 1.0)
             self.assertEqual(result["count"], 1)
             self.assertEqual(len(result["sha256"]), 64)
+
+    def test_dry_run_allows_existing_file_name(self):
+        archive = {
+            "path": "result.zip",
+            "file_name": "result.zip",
+            "size": 123,
+            "sha256": "0" * 64,
+            "count": 1,
+            "points": 2,
+        }
+
+        class Client:
+            def __init__(self, cookie, competition):
+                pass
+
+            def user_info(self):
+                return {"login": "tester"}
+
+            def teams(self):
+                return [{"id": 205141, "name": "team"}]
+
+            def results(self, stage_id):
+                return [{"id": 1, "file_name": "result.zip", "status": 2}]
+
+            def upload_token(self):
+                return {
+                    "bucket": "bucket",
+                    "end_point": "endpoint",
+                    "bucket_host": "host",
+                }
+
+        stdout = io.StringIO()
+        with mock.patch.dict(os.environ, {"EDUCODER_COOKIE": "session=x"}), mock.patch.object(
+            submit_educoder, "validate_archive", return_value=archive
+        ), mock.patch.object(submit_educoder, "EducoderClient", Client), redirect_stdout(stdout):
+            result = submit_educoder.main(["result.zip", "--dry-run"])
+
+        self.assertEqual(result, 0)
+        self.assertIn("dry-run warning", stdout.getvalue())
+        self.assertIn("dry-run complete", stdout.getvalue())
 
 
 if __name__ == "__main__":
