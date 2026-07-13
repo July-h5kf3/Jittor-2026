@@ -1,5 +1,7 @@
 import jittor as jt
-jt.flags.use_cuda = 1
+from src.runtime import configure_jittor_runtime
+
+configure_jittor_runtime(jt)
 
 from omegaconf import OmegaConf
 from tqdm import tqdm

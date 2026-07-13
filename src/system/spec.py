@@ -132,7 +132,21 @@ class DummySystem():
             self.optimizer = get_optimizer(optimizer_config, model)
         else:
             self.optimizer = None
-        
+
+        # cosine LR decay + weight EMA (optional, configured via trainer_config)
+        self.lr_schedule = trainer_config.get('lr_schedule', None)   # 'cosine' | None
+        self.base_lr = float(getattr(self.optimizer, 'lr', 0.0)) if self.optimizer is not None else 0.0
+        self.ema_decay = float(trainer_config.get('ema_decay', 0.0))  # 0 disables EMA
+        self._ema = None  # lazy: dict name -> jt.Var of EMA-smoothed params
+
+        # --- Weights & Biases logging (rank0 only, opt-in via WANDB_API_KEY) ---
+        # Disabled unless an API key (or offline mode) is in the env, so manual
+        # and predict runs never create stray runs. Initialized lazily in train().
+        self._wandb = None
+        self._global_step = 0
+        self._last_loss_dict = None  # latest train loss_dict (jt.Vars), materialized at log time
+        self._wandb_log_every = int(trainer_config.get('wandb_log_every', 20))
+
         self._validation_loss = defaultdict(list)
         self.distributed = get_distributed_context()
         self.is_primary_process = is_primary_process(self.distributed)
@@ -167,6 +181,7 @@ class DummySystem():
                 if self.loss_config[name] > 0:
                     loss_sum += self.loss_config[name] * loss_dict[name]
             loss_dict['loss_sum'] = loss_sum
+            self._last_loss_dict = loss_dict  # for wandb per-step component logging
             # TODO: log
             # # add train prefix to loss_dict
             # prefixed_loss_dict = {f"train/{k}": v for k, v in loss_dict.items()}
@@ -268,11 +283,44 @@ class DummySystem():
             return metric > self.best_metric + self.min_delta
         return metric < self.best_metric - self.min_delta
 
+    # ----- cosine LR schedule + weight EMA -----
+    def _apply_lr(self, epoch: int):
+        if self.lr_schedule == 'cosine' and self.optimizer is not None and self.epochs > 1:
+            import math
+            lr = 0.5 * self.base_lr * (1.0 + math.cos(math.pi * epoch / self.epochs))
+            self.optimizer.lr = lr
+
+    def _ema_keys(self):
+        return [k for k in self.model.state_dict()
+                if 'running_' not in k and 'num_batches' not in k]
+
+    def _update_ema(self):
+        if self.ema_decay <= 0:
+            return
+        sd = self.model.state_dict()
+        if self._ema is None:
+            self._ema = {k: sd[k].detach().clone() for k in self._ema_keys()}
+            return
+        d = self.ema_decay
+        for k in self._ema:
+            self._ema[k] = (d * self._ema[k] + (1.0 - d) * sd[k].detach()).detach()
+
+    def _save_model(self, path: str):
+        # save EMA-smoothed weights when EMA is enabled (more stable than raw)
+        if self.ema_decay > 0 and self._ema is not None:
+            cur = self.model.state_dict()
+            backup = {k: cur[k].detach().clone() for k in self._ema}
+            self.model.load_state_dict(self._ema)
+            self.model.save(path)
+            self.model.load_state_dict(backup)
+        else:
+            self.model.save(path)
+
     def _handle_epoch_checkpoint(self, epoch: int, metric: Optional[float]) -> bool:
         os.makedirs(self.ckpt_save_dir, exist_ok=True)
         if metric is None:
             checkpoint_path = self._epoch_checkpoint_path(epoch)
-            self.model.save(checkpoint_path)
+            self._save_model(checkpoint_path)
             return False
 
         improved = self._is_improved(metric)
@@ -281,12 +329,12 @@ class DummySystem():
             self.best_epoch = epoch
             self._epochs_without_improvement = 0
             checkpoint_path = self._best_checkpoint_path() if self.save_best_only else self._epoch_checkpoint_path(epoch)
-            self.model.save(checkpoint_path)
+            self._save_model(checkpoint_path)
         else:
             if self.early_stopping_enabled:
                 self._epochs_without_improvement += 1
             if not self.save_best_only:
-                self.model.save(self._epoch_checkpoint_path(epoch))
+                self._save_model(self._epoch_checkpoint_path(epoch))
 
         return (
             self.early_stopping_enabled
@@ -334,6 +382,21 @@ class DummySystem():
                 f"Best {self.monitor}: {self.best_metric:.6f} "
                 f"at epoch {self.best_epoch}"
             )
+        if self.is_primary_process and self._wandb is not None:
+            # per-class validation means (values are already python floats)
+            log_data = {
+                k: (sum(v) / len(v) if v else 0.0)
+                for k, v in self._validation_loss.items()
+            }
+            log_data['epoch'] = epoch
+            log_data['val/lr'] = float(getattr(self.optimizer, 'lr', 0.0))
+            if metric is not None:
+                log_data[self.monitor] = metric  # e.g. averaged val/loss_sum
+            if self.best_metric is not None:
+                log_data['val/best_metric'] = self.best_metric
+                log_data['val/best_epoch'] = self.best_epoch
+            log_data['val/epochs_without_improvement'] = self._epochs_without_improvement
+            self._wandb_log(log_data)
         return should_stop
 
     def _run_rank0_epoch_end(self, epoch: int):
@@ -362,13 +425,100 @@ class DummySystem():
             sync_all()
         return bool(flag.item() >= 0.5)
     
+    # ----- Weights & Biases logging -----
+    def _init_wandb(self):
+        """Start a wandb run on the primary process. No-op unless WANDB_API_KEY
+        (or an offline WANDB_MODE) is set, so manual/predict runs stay clean.
+        Any failure disables wandb instead of crashing training.
+
+        Run naming derives from the checkpoint dir (e.g. ``experiments/spcfgfn_cvm``
+        -> name ``spcfgfn_cvm``, group ``spcfgfn``, stage ``cvm``) so the three
+        StraightPCF stages of one experiment land under a single wandb group.
+        """
+        if not self.is_primary_process:
+            return
+        if not (os.environ.get('WANDB_API_KEY')
+                or os.environ.get('WANDB_MODE') in ('offline', 'dryrun')):
+            return
+        try:
+            import wandb
+        except Exception as exc:  # noqa: BLE001 - logging must never break training
+            print(f"[wandb] unavailable ({exc}); training without logging")
+            return
+
+        name = os.environ.get('WANDB_RUN_NAME') \
+            or os.path.basename(self.ckpt_save_dir.rstrip('/')) or 'run'
+        group = os.environ.get('WANDB_RUN_GROUP')
+        stage = None
+        for suf in ('_cvm', '_spcf', '_vm'):  # _cvm before _vm (longest match first)
+            if name.endswith(suf):
+                stage = suf[1:]
+                if group is None:
+                    group = name[:-len(suf)]
+                break
+        if group is None:
+            group = name
+
+        config = {
+            'epochs': self.epochs,
+            'base_lr': self.base_lr,
+            'lr_schedule': self.lr_schedule,
+            'ema_decay': self.ema_decay,
+            'loss_config': dict(self.loss_config) if self.loss_config else None,
+            'world_size': self.distributed.world_size,
+            'save_best_only': self.save_best_only,
+            'early_stopping': self.early_stopping_enabled,
+            'monitor': self.monitor,
+            'patience': self.early_stopping_patience,
+            'stage': stage,
+            'ckpt_save_dir': self.ckpt_save_dir,
+        }
+        try:
+            self._wandb = wandb.init(
+                project=os.environ.get('WANDB_PROJECT', 'Track2'),
+                name=name,
+                group=group,
+                job_type=stage or 'train',
+                config=config,
+                resume='allow',
+                id=os.environ.get('WANDB_RUN_ID') or None,
+            )
+            wandb.define_metric('train/global_step')
+            wandb.define_metric('train/*', step_metric='train/global_step')
+            wandb.define_metric('epoch')
+            wandb.define_metric('val/*', step_metric='epoch')
+            print(f"[wandb] logging project={config['ckpt_save_dir']} "
+                  f"run={name} group={group}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"[wandb] init failed ({exc}); training without logging")
+            self._wandb = None
+
+    def _wandb_log(self, data: Dict):
+        if self._wandb is None:
+            return
+        try:
+            self._wandb.log(data)
+        except Exception:  # noqa: BLE001 - never let logging crash training
+            pass
+
+    def _wandb_finish(self):
+        if self._wandb is None:
+            return
+        try:
+            self._wandb.finish()
+        except Exception:  # noqa: BLE001
+            pass
+        self._wandb = None
+
     def train(self):
         assert self.optimizer is not None, "optimizer is None, cannot train"
+        self._init_wandb()
         self.model.set_predict(False)
         if self.is_primary_process and os.path.exists(self._early_stop_signal_path()):
             os.remove(self._early_stop_signal_path())
         for epoch in range(self.epochs):
             self.model.train()
+            self._apply_lr(epoch)
             self.on_train_epoch_start()
             train_dataloader = self.dataset_module.train_dataloader()
             assert train_dataloader is not None, "train_dataloader is None"
@@ -383,9 +533,25 @@ class DummySystem():
                 self.optimizer.backward(loss)
                 self.on_before_optimizer_step(self.optimizer)
                 self.optimizer.step()
+                self._update_ema()
                 if self.is_primary_process and step % log_every == 0:
-                    pbar.set_description(f"Epoch {epoch}, Loss: {_get_item(loss)}")
+                    loss_val = _get_item(loss)
+                    pbar.set_description(f"Epoch {epoch}, Loss: {loss_val}")
+                    if self._wandb is not None:
+                        log_data = {
+                            'train/loss_sum': loss_val,
+                            'train/lr': float(getattr(self.optimizer, 'lr', 0.0)),
+                            'train/epoch': epoch,
+                            'train/global_step': self._global_step,
+                        }
+                        if self._last_loss_dict is not None:
+                            for k, v in self._last_loss_dict.items():
+                                if k == 'loss_sum':
+                                    continue
+                                log_data[f'train/{k}'] = _get_item(v)
+                        self._wandb_log(log_data)
                 self.on_train_batch_end()
+                self._global_step += 1
             self.on_train_epoch_end()
             should_stop = self._run_rank0_epoch_end(epoch)
             if should_stop:
@@ -396,6 +562,7 @@ class DummySystem():
                         "epochs without improvement."
                     )
                 break
+        self._wandb_finish()
     
     def predict(self):
         # only iterate once

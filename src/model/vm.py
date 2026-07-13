@@ -195,7 +195,7 @@ def knn_points(x, y, k):
     nn = jt.stack(nn, dim=0)
     return dist_k, idx, nn
 
-def patch_based_denoise(model: VelocityModule, pcl_noisy, patch_size=1000, seed_k=6, seed_k_alpha=1) -> jt.Var:
+def patch_based_denoise(model: VelocityModule, pcl_noisy, patch_size=1000, seed_k=6, seed_k_alpha=1, fusion=False) -> jt.Var:
     """
     pcl_noisy: (N, 3)
     """
@@ -249,6 +249,23 @@ def patch_based_denoise(model: VelocityModule, pcl_noisy, patch_size=1000, seed_
     # empty mask and be dropped, making the output smaller than the input. Fall back
     # to the original (un-denoised) point so the output count always equals N.
     orig = pcl_noisy[0]  # (N, 3)
+
+    if fusion:
+        # Index-based overlap fusion: every original point i aggregates a weighted
+        # average of the denoised displacements from ALL patches covering it (weight
+        # = closeness to that patch's seed). Removes seams, uses all predictions,
+        # keeps exactly N points (uncovered points -> zero displacement = original).
+        disp_sum = jt.zeros((N, 3))
+        w_sum = jt.zeros((N,))
+        for r in range(num_patches):
+            idxs = point_idxs[r]                          # (M,) unique within a patch
+            w = jt.exp(-patch_dists[r])                   # (M,) seed-proximity weight
+            disp = patches_denoised[r] - orig[idxs]       # (M,3) displacement
+            disp_sum[idxs] = disp_sum[idxs] + w.unsqueeze(-1) * disp
+            w_sum[idxs] = w_sum[idxs] + w
+        pcl_out = orig + disp_sum / (w_sum.unsqueeze(-1) + 1e-8)
+        return pcl_out
+
     pcl_out = []
     for pidx in range(N):
         patch_id = best_weights_idx[pidx].item()

@@ -65,21 +65,28 @@ class AugmentNormalizePC(Augment):
 
 @dataclass(frozen=True)
 class AugmentAddNoise(Augment):
-    
+
     noise_std_min: float
-    
+
     noise_std_max: float
-    
+
+    outlier_frac: float = 0.0      # C-noise: fraction of points getting heavy-tail outlier
+
+    outlier_scale: float = 1.0     # C-noise: displacement multiplier for outlier points
+
     @classmethod
     def parse(cls, **kwargs) -> 'AugmentAddNoise':
         cls.check_keys(kwargs)
         return AugmentAddNoise(**kwargs)
-    
+
     def apply(self, asset: Asset, **kwargs):
         pc = asset.sampled_vertices
         assert pc is not None, "sampled_vertices is None, cannot apply AugmentAddNoise"
         noise_std = np.random.uniform(self.noise_std_min, self.noise_std_max)
         noise = np.random.laplace(0, noise_std, size=pc.shape)
+        if self.outlier_frac > 0:
+            m = np.random.rand(pc.shape[0]) < self.outlier_frac
+            noise[m] = noise[m] * self.outlier_scale
         asset.sampled_vertices_noisy = pc + noise
 
 @dataclass(frozen=True)
@@ -187,6 +194,8 @@ class AugmentPatchSPCF(Augment):
 
     num_patches: int
 
+    t_strata: bool = False   # C2: stratified t (more mass at t~0 and t~1)
+
     @classmethod
     def parse(cls, **kwargs) -> 'AugmentPatchSPCF':
         cls.check_keys(kwargs)
@@ -207,7 +216,13 @@ class AugmentPatchSPCF(Augment):
         pat_B = pc[nn_idx]                                          # (P, M, 3) clean
 
         l1, l2 = 1e-8, 1.0
-        t = (l2 - l1) * np.random.rand(self.num_patches) + l1       # (P,) one t per patch
+        if self.t_strata:
+            _edges = np.array([1e-8, 0.1, 0.3, 0.7, 0.9, 1.0], dtype=np.float64)
+            _probs = np.array([0.25, 0.15, 0.20, 0.15, 0.25])
+            _b = np.random.choice(len(_probs), size=self.num_patches, p=_probs)
+            t = np.random.uniform(_edges[_b], _edges[_b + 1])       # (P,) stratified
+        else:
+            t = (l2 - l1) * np.random.rand(self.num_patches) + l1       # (P,) one t per patch
         tt = t[:, None, None]
         seed_points_t = tt * pc[seed_idx][:, None, :] + (1 - tt) * pc_noisy[seed_idx][:, None, :]  # (P,1,3)
 

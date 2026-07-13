@@ -30,7 +30,26 @@ export use_mpi="${use_mpi:-1}"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}"
 if [[ -d /root/data-tmp ]]; then
   export cache_path="${cache_path:-/root/data-tmp/.cache/jittor}"
+  # The container rootfs (/) is a shared overlay that runs ~full (~171M free).
+  # nvcc/gcc write compile intermediates to $TMPDIR (default /tmp, on /), so a
+  # heavy new-op compile (e.g. the SPCF stage's distance module) fails with
+  # "No space left on device" -- this killed SPCF on 2026-06-29. Redirect all
+  # compiler/python scratch to the roomy NFS mount so / is never touched.
+  export TMPDIR="${TMPDIR:-/root/data-tmp/Track2/.nvcc_tmp}"
+  export TMP="$TMPDIR"
+  export TEMP="$TMPDIR"
+  mkdir -p "$TMPDIR"
 fi
+
+# --- Weights & Biases logging ---
+# The GPU box is air-gapped behind a captive portal, so default to OFFLINE:
+# runs are written under $WANDB_DIR/wandb/ and synced later from a machine with
+# internet (`wandb sync <dir>`). Override WANDB_MODE=online/disabled to change.
+# WANDB_CONSOLE=off keeps stdout clean so runners can still grep training logs.
+export WANDB_MODE="${WANDB_MODE:-offline}"
+export WANDB_PROJECT="${WANDB_PROJECT:-Track2}"
+export WANDB_DIR="${WANDB_DIR:-$(pwd)}"
+export WANDB_CONSOLE="${WANDB_CONSOLE:-off}"
 
 if [[ -n "${MPIRUN:-}" ]]; then
   mpirun_bin="$MPIRUN"
@@ -54,5 +73,7 @@ exec "$mpirun_bin" \
   --allow-run-as-root \
   --bind-to none \
   --map-by slot \
+  -x WANDB_MODE -x WANDB_PROJECT -x WANDB_DIR -x WANDB_CONSOLE \
+  -x TMPDIR -x TMP -x TEMP -x cache_path \
   -np "$NP" \
   python run.py --task "$TASK" "$@"

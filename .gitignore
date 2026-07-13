@@ -1,34 +1,49 @@
-# Local secrets / machine-specific connection notes
+# Local credentials and machine-specific notes
 SSH.md
+.env
 
-# Python caches
+# Python/Jittor caches
 __pycache__/
 *.py[cod]
-
-# Parsed-mesh cache (generated next to .obj files)
+.nvcc_tmp/
+.cache/
 *.cache.npz
 
-# macOS
+# IDE/OS files
+.vscode/
+.idea/
 .DS_Store
+._*
 
-# Data and generated artifacts
+# Datasets and local validation sets
 dataset_train/
 dataset_test_noisy/
+localtest/
+localtest2/
+
+# Model artifacts and generated predictions
 experiments/
-results/
+results*/
+submission_results/
+train_logs/
+wandb/
+wandb_offline/
+
+# Temporary experiment directories
+.pd001_eval_snapshot/
+.pd002_sync_tmp/
+__ms002_upload_tmp__/
 tmp_predict/
 smoke_logs/
-train_logs/
 bench_logs/
-configs/data/train_bench*.yaml
-configs/task/bench*.yaml
-configs/system/bench.yaml
-train.pid
 
-# Download/setup leftovers
-setup_data.*
+# Generated archives/logs/process files
+*.pkl
+*.npy
+*.npz
 *.log
 *.pid
 *.zip
 *.tar
 *.tar.gz
+train.pid

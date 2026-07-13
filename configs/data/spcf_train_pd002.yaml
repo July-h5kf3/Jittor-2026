@@ -4,9 +4,6 @@ loader: &loader obj
 train_dataset:
   shuffle: True
   batch_size: 32
-  # 6 per rank -> ~12 total across the 2 DDP ranks, matching the single-process
-  # dataloader sweet spot. Higher (e.g. 12/rank = 24 total) over-subscribes the
-  # jittor runtime and is measurably SLOWER (2.0 vs 2.5 it/s).
   num_workers: 6
   datapath:
     input_dataset_dir: ./dataset_train
@@ -22,8 +19,8 @@ train_dataset:
 
 validate_dataset:
   shuffle: False
-  batch_size: 16
-  num_workers: 8
+  batch_size: 4
+  num_workers: 4
   datapath:
     input_dataset_dir: ./dataset_train
     use_prob: False
@@ -33,4 +30,19 @@ validate_dataset:
     data_path:
       shapenet: [
         [./datalist/validate.txt, 1.0],
+      ]
+
+predict_dataset:
+  shuffle: False
+  batch_size: 1
+  num_workers: 4
+  datapath:
+    input_dataset_dir: ./dataset_test_noisy
+    use_prob: False
+    loader: npy
+    data_name: noisy.npy
+    ignore_check: True
+    data_path:
+      shapenet: [
+        [./datalist/test.txt, 1.0],
       ]

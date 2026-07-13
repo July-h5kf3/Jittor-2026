@@ -1,21 +1,22 @@
 mode: train
 debug: False
+init_stage_ckpt: experiments/_bak_official_75.01/cvm_checkpoint_best.pkl
 components:
-  data: spcf_train
-  transform: spcf
-  system: spcfg_vm
-  model: spcfg_vm
+  data: spcf_train_pd002
+  transform: spcf_n
+  system: spcfgfncvm002_cvm
+  model: spcfgfncvm002_cvm
 loss:
   loss: 1.0
 optimizer:
   __target__: adam
-  lr: 0.0001
+  lr: 0.00003
 trainer:
-  epochs: 150
+  epochs: 120
   save_best_only: True
   early_stopping:
     enabled: True
     monitor: val/loss_sum
     mode: min
-    patience: 15
+    patience: 20
     min_delta: 0.0000005
