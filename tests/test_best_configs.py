@@ -58,7 +58,7 @@ class BestConfigTests(unittest.TestCase):
             "experiments/spcfgfncvm002_spcf/checkpoint_best.pkl",
         )
         self.assertLessEqual(task.optimizer.lr, 0.00001)
-        self.assertEqual(task.trainer.initial_best_metric, 3.794236)
+        self.assertNotIn("initial_best_metric", task.trainer)
 
 
 if __name__ == "__main__":

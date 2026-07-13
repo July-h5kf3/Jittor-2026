@@ -14,8 +14,6 @@ optimizer:
 trainer:
   epochs: 80
   save_best_only: True
-  initial_best_metric: 3.794236
-  initial_best_epoch: 0
   early_stopping:
     enabled: True
     monitor: val/loss_sum
