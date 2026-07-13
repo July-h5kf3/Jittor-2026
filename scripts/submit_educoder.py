@@ -297,6 +297,16 @@ def _callback_headers(token: Mapping[str, Any], metadata: Mapping[str, Any]) -> 
     return {"x-oss-callback": encoded}
 
 
+def _read_oss_result(result: Any) -> bytes:
+    # oss2 2.19 returns a PutObjectResult whose response stream is in `.resp`;
+    # older/mocked clients may expose `.read()` directly.
+    stream = getattr(result, "resp", result)
+    reader = getattr(stream, "read", None)
+    if not callable(reader):
+        raise SubmissionError("OSS completion result did not expose a response body")
+    return reader()
+
+
 def upload_archive(
     path: Path,
     token: Mapping[str, Any],
@@ -350,7 +360,7 @@ def upload_archive(
             parts,
             headers=_callback_headers(token, metadata),
         )
-        raw = complete.read()
+        raw = _read_oss_result(complete)
     except Exception:
         try:
             bucket.abort_multipart_upload(object_name, upload_id)

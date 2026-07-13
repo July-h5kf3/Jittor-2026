@@ -1,4 +1,4 @@
-# 最终方法：CVM-002
+# 最终方法：CVM-002 A105
 
 ## 总览
 
@@ -29,7 +29,7 @@ cvm_dir_target: stage_velocity
 cvm_deep_sup: true
 ```
 
-CVM-001 只使用 stage velocity，线上为 74.90；加入 deep supervision 后，CVM-002 提升至 75.51，说明两者需要组合使用。
+CVM-001 只使用 stage velocity，线上为 74.90；加入 deep supervision 后，CVM-002 (`alpha=1.0`) 提升至 75.51，说明两者需要组合使用。保持权重不变并将单次推理步长校准为 `alpha=1.05` 后，A 榜进一步提升至 76.03。
 
 ## Distance head
 
@@ -38,13 +38,13 @@ SPCF 阶段使用 multi-scale distance encoder：
 ```yaml
 stage: spcf
 distance_multiscale: true
-predict_alpha: 1.0
+predict_alpha: 1.05
 predict_passes: 1
 predict_tta: 0
 predict_fusion: false
 ```
 
-最终推理坚持单次、无 TTA、无普通融合，因为此前的推理增强多次出现 local/online 背离。
+最终推理坚持单次、`alpha=1.05`、无 TTA、无普通融合。该配置 A 榜总分 76.03，CD/P2S 为 64.57/87.49；此前的多趟推理增强多次出现 local/online 背离。
 
 ## 训练分布
 

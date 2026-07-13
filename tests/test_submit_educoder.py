@@ -32,6 +32,18 @@ class SubmitEducoderTests(unittest.TestCase):
         )
         self.assertEqual(query, "name=a%20b.zip&stage_type=588")
 
+    def test_read_oss_result_supports_put_object_result(self):
+        class Response:
+            def read(self):
+                return b'{"status":0}'
+
+        class Result:
+            resp = Response()
+
+        self.assertEqual(
+            submit_educoder._read_oss_result(Result()), b'{"status":0}'
+        )
+
     def test_validate_archive(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "result.zip"

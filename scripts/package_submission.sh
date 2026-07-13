@@ -70,7 +70,20 @@ import numpy as np
 out_dir = Path(sys.argv[1])
 expected_count = int(sys.argv[2])
 expected_points = int(sys.argv[3])
-files = sorted(out_dir.glob("shapenet/*/*/denoised.npy"))
+candidate_roots = [
+    out_dir / "shapenet",
+    out_dir / "dataset_test_noisy" / "shapenet",
+]
+populated_roots = [
+    root for root in candidate_roots if any(root.glob("*/*/denoised.npy"))
+]
+if len(populated_roots) != 1:
+    raise SystemExit(
+        "expected exactly one prediction tree at "
+        f"{candidate_roots}, found {len(populated_roots)}"
+    )
+prediction_root = populated_roots[0]
+files = sorted(prediction_root.glob("*/*/denoised.npy"))
 if len(files) != expected_count:
     raise SystemExit(f"expected {expected_count} predictions, found {len(files)}")
 
@@ -102,7 +115,20 @@ from pathlib import Path
 
 out_dir = Path(sys.argv[1])
 zip_path = Path(sys.argv[2])
-files = sorted((out_dir / "shapenet").glob("*/*/denoised.npy"))
+candidate_roots = [
+    out_dir / "shapenet",
+    out_dir / "dataset_test_noisy" / "shapenet",
+]
+populated_roots = [
+    root for root in candidate_roots if any(root.glob("*/*/denoised.npy"))
+]
+if len(populated_roots) != 1:
+    raise SystemExit(
+        "expected exactly one prediction tree at "
+        f"{candidate_roots}, found {len(populated_roots)}"
+    )
+prediction_root = populated_roots[0]
+files = sorted(prediction_root.glob("*/*/denoised.npy"))
 with zipfile.ZipFile(
     zip_path,
     mode="w",
@@ -111,7 +137,8 @@ with zipfile.ZipFile(
     allowZip64=True,
 ) as archive:
     for path in files:
-        archive.write(path, path.relative_to(out_dir).as_posix())
+        member = Path("shapenet") / path.relative_to(prediction_root)
+        archive.write(path, member.as_posix())
 
 with zipfile.ZipFile(zip_path, mode="r") as archive:
     bad_file = archive.testzip()
