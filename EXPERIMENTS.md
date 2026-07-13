@@ -1,91 +1,97 @@
 # 关键实验记录
 
-本文只保留影响最终决策的实验。完整的逐小时运行日志、W&B 离线目录、重复 checkpoint 和中间预测已经清理。
+本文只保留影响最终决策的结果。逐小时日志、失败 checkpoint、中间预测和编译 cache 均不进入仓库，并在实验定案后从服务器删除。
 
 ## 评测口径
 
 - 官方分：`0.5 × CD_score + 0.5 × P2S_score`。
-- `local2`：62 个内部样本，用于快速淘汰明显失败方案。
-- 已观察到本地与线上背离，因此小于 `0.1` 的 local2 差距不用于确定最终排序。
+- `local2`：62 个内部样本，用于严格配对淘汰；近期实验统一与 V4CTRL 比较。
+- 新方法只有在 adaptive 总分相对 control 至少提高 `+0.05` 时才保留。
+- 已观察到本地与线上幅度不一致；local2 小差距只能用于排除，最终仍以线上反馈为准。
+- patch 推理的随机状态会随样本顺序推进；严格对照必须使用同一 canonical 列表顺序，不能拼接倒序或分片推理结果。
 
 ## 已有线上反馈
 
 | 方法 | local2 | 线上总分 | 线上 CD | 线上 P2S | 结论 |
 |---|---:|---:|---:|---:|---|
 | Graph StraightPCF | 旧代理 62.87 | 73.71 | - | - | 图卷解码带来最大单次结构收益 |
-| module=4 (`spcfgm`) | 旧代理 64.66 | 74.66 | - | - | module scaling 可迁移，module=5 OOM |
+| module=4（`spcfgm`） | 旧代理 64.66 | 74.66 | - | - | module scaling 可迁移；module=5 OOM |
 | C-noise extended | 72.06 | 75.01 | - | - | 噪声对齐和更长训练有效 |
-| MS-A103 | 72.09 | 75.13 | - | - | alpha 小幅变化有效但有限 |
-| MS-A106 | 72.15 | 75.47 | 63.95 | 86.98 | distance alpha=1.06，P2S 优势明显 |
+| MS-A106 | 72.15 | 75.47 | 63.95 | 86.98 | 多尺度 distance，P2S 较强 |
 | CVM-001 | 72.54 | 74.90 | 63.59 | 86.20 | stage target 单独使用不稳定 |
-| CVM-002 (`alpha=1.0`) | 72.77 | 75.51 | 64.15 | 86.88 | stage target 与 deep supervision 的组合此前最佳 |
-| **CVM-002 A105** | **72.82** | **76.03** | **64.57** | **87.49** | **相同权重仅校准推理步长，CD/P2S 同时提高，当前最佳** |
+| CVM-002（alpha=1.0） | 72.77 | 75.51 | 64.15 | 86.88 | stage target + deep supervision 有效 |
+| **CVM-002 A105** | **72.82** | **76.03** | **64.57** | **87.49** | **当前线上最佳；相同权重只把推理 alpha 调到 1.05** |
 
-## 2026-07-13：LDC 与推理步长校准
+## 当前最佳离线候选：按云 mean/var 校准
 
-### LDC / conditioning 消融
+固定 alpha 对不同噪声强度并非都最优。最终校准器只读取 noisy 和模型预测，使用：
 
-| 方法 | 训练口径 | 最佳验证 | local2 | CD | P2S | 决策 |
-|---|---|---:|---:|---:|---:|---|
-| LDC matched-unroll | 两步展开 + distance/stage adapter，冻结 velocity trunk | 4.3136（与历史单步口径不可比） | 70.55 | 54.50 | 86.60 | 明显损害点分布覆盖，否定 |
-| LDC alpha 后处理 | 对 LDC 位移扫 `0.75～1.05` | - | 最高 70.96（alpha 0.90） | 55.29 | 86.64 | 不是简单步长过大，否定 |
-| LDC-1 消融 | 恢复单步训练，仅保留 adapter | 4.4436 | 未评测 | - | - | 历史 CVM-002 同口径为 3.7942，提前停止 |
+1. `log(mean(||prediction-noisy||))`；
+2. `log(var(||prediction-noisy||))`。
 
-结论：matched-unroll 和 adapter 均未显示收益。LDC 的 zero-init 保证了安全初始化，但微调后主要保住 P2S、牺牲 CD，说明问题不是继续增加时间条件就能解决。
+Ridge 输出每云 alpha，并裁剪到 `[0.97, 1.10]`。它不读取 clean 或 mesh，也不修改 checkpoint。
 
-### CVM-002 `predict_alpha` 扫描
+| 验证口径 | 原始/固定 alpha | mean/var adaptive | 增益 |
+|---|---:|---:|---:|
+| local2 五折留出 | 72.87189 | 72.99553 | **+0.12364**，95% CI `[+0.07856,+0.17084]` |
+| 独立 20 云 | 77.35058 | 77.76446 | **+0.41388**；CD/P2S 均提高 |
+| V4CTRL 完整 62 云 | 72.82574 raw | 73.00042 adaptive | 作为近期训练消融 control |
 
-全部使用同一个 CVM-002 checkpoint、单次推理、无 TTA/融合：
+最终 200 云候选 alpha 范围为 `0.97～1.08950`，均值 `1.05542`，没有样本触及 1.10 上限。
 
-| alpha | local2 CD | local2 P2S | local2 总分 | 相对 1.00 |
-|---:|---:|---:|---:|---:|
-| 0.94 | 56.94 | 88.19 | 72.57 | -0.20 |
-| 0.97 | 56.99 | 88.39 | 72.69 | -0.08 |
-| 1.00 | - | - | 72.77 | 基线 |
-| 1.03 | 56.97 | 88.66 | 72.81 | +0.04 |
-| **1.05** | **56.93** | **88.71** | **72.82** | **+0.05** |
-| 1.06 | 56.91 | 88.74 | 72.82 | +0.05 |
+- ZIP：`submission_results/result_cvm002a105_adaptive_meanvar_a110.zip`
+- SHA256：`073f4b23bed59ce5dc237a6a2e4aaba7d17e13f4b2e68843532ca98e71c30564`
+- 状态：离线候选，尚未向 Educoder 实际上传。
 
-`1.05` 取 1.03/1.06 平台区间的中点。2026-07-13 的 A 榜提交得到 **76.03**，相对 `alpha=1.0` 的 75.51 提升 **0.52**；CD 从 64.15 提升到 64.57，P2S 从 86.88 提升到 87.49。该结果确认了步长校准的收益，但也再次说明 local2 的小差距不能直接估计线上增益幅度。
+## 2026-07-13～14 严格训练消融
 
-## 已完成但没有线上分数
+统一 control：
 
-| 方法 | 变化 | local2 | 状态 | 决策 |
-|---|---|---:|---|---|
-| CVM-003 | full residual + deep supervision | 72.28 | 未生成提交包 | 不优先 |
-| CVM-004 | stage/full blend=0.25 | 72.22 | 未生成提交包 | 不优先 |
-| CVM-005 | stage/full blend=0.50 | 72.48 | 未生成提交包 | 次选 |
-| **CVM-006** | **stage/full blend=0.75** | **72.72** | `SKIP_SUBMIT=1` | 最值得补线上验证 |
-| CVM-007 | multi-scale velocity + full residual | 72.05 | `SKIP_SUBMIT=1` | 否定单纯多尺度 velocity |
-| CVM-008 | multi-scale velocity + stage target | 72.60 | 已生成 zip，无线上记录 | 低于 CVM-002 |
-| CVM-011 | CVM-002 + 更强训练噪声 | 71.97 | 未生成提交包 | 简单增大噪声失败 |
-| MS-A110 | distance alpha=1.10 | 72.19 | 已生成 zip，无线上记录 | 可能过度去噪 |
-| MS-002 | multi-scale distance + edge endpoint | 72.12 | 已生成 zip，无线上记录 | 收益不足 |
-| MS-003 | 更大 edge loss | 71.88 | 已生成 zip，无线上记录 | 负向 |
-| PD-001～004 | pointwise/residual/smooth distance gate | 71.03～71.40 | 已评测 | 整条路线暂时否定 |
+- raw：CD/P2S/总分 `56.93656507 / 88.71491679 / 72.82574093`
+- adaptive：`57.17678685 / 88.82405055 / 73.00041870`
 
-## 未完成实验
+| 方法 | raw 总分 | adaptive 总分 | adaptive-control | 总分 95% CI | 决策 |
+|---|---:|---:|---:|---:|---|
+| Normal auxiliary head | 72.82839 | 72.99793 | -0.00249 | `[-0.01561,+0.01171]` | CD 小升、P2S 显著下降，否定 |
+| SIMPC mirror consistency | 72.81372 | 72.96870 | -0.03172 | `[-0.07603,+0.01490]` | CD/P2S Pareto 变差，否定 |
+| HybridPF short residual | 72.71474 | 72.93875 | -0.06167 | `[-0.09919,-0.02629]` | CD/P2S 均下降，否定 |
+| ROB010 Huber endpoint | 72.82483 | 72.99279 | -0.00763 | `[-0.02319,+0.00870]` | 裁剪难点梯度损害 P2S，否定 |
+| CORE256 中心监督 | 72.82799 | 72.99724 | -0.00317 | `[-0.01701,+0.01148]` | 忽略约 13% 实际拼接输出，否定 |
+| CORE384 中心监督 | 72.82765 | 73.00200 | +0.00158 | `[-0.00427,+0.00773]` | 覆盖约 96.5% 输出仍无实质收益，否定 |
+| TSTRATA 端点分层采样 | 72.81380 | 72.99515 | -0.00527 | `[-0.03428,+0.02165]` | P2S 上升但 CD 下降，否定 |
 
-- **CVM-009**：`full_residual + deep supervision + time/stage conditioning`。
-  - 2026-07-07 启动时，新的 Jittor cache 尝试从 GitHub 下载 NCCL。
-  - GitHub 返回 `HTTP 429 Too Many Requests`，训练在创建 checkpoint 前退出。
-  - 因此这不是模型失败，condition 机制尚未得到实验验证。
-- **CVM-010**：`CVM-002 + time/stage conditioning`。
-  - 配置和实现已准备。
-  - 因 CVM-009 失败后流水线直接退出，从未启动。
+其他表面监督：
 
-## 被否定或降级的方向
+| 方法 | 关键结果 | 决策 |
+|---|---|---|
+| correspondence normal | SURF-050 比同配方 SURF-000 仅 +0.00077，P2S -0.00751 | 无可靠收益 |
+| bilateral IMLS | 五折 IMLS-control = -0.01102，95% CI `[-0.02443,+0.00322]` | 否定 |
+| Virtual Normal | smoke test 后未进入完整训练 | 法向/IMLS 已无收益，不继续消耗预算 |
 
-- 全局 attention、Point Transformer、朴素/修复版 3D RoPE：最高只回到基线附近。
-- EMA + cosine LR：验证/模型选择不匹配，明显退化。
-- module=5、dim=512：16GB 显存下 OOM。
-- 两趟/三趟推理、普通 TTA、索引融合：本地收益不能迁移，部分线上下降。
-- 全局 CD/P2S 辅助损失和过强 edge loss：同时损害 CD 与 P2S。
-- 更强噪声区间：CVM-011 local2 下降到 71.97。
+## 推理后处理消融
 
-## 推荐后续顺序
+| 方法 | 结果 | 决策 |
+|---|---|---|
+| 六特征 geometry Ridge | local2 OOF 较高，但独立 20 云迁移弱于 mean/var | 疑似过拟合，删除 |
+| tangent repulsion | local2 CD 上升但 P2S 等量下降；独立集总分约 -0.01 | 手工更新不稳定，删除 |
+| 高位移点逐点 alpha | OOF 相对 mean/var -0.00701 | 高位移也包含真实边缘，删除 |
+| Noise2Score3D 式 TV-PC 选 alpha | 62/62 云都偏向更大 alpha，52 云直接选上界 1.10 | 偏向过度平滑，删除 |
+| 单特征/二次 Ridge | 最多只比 mean/var 高约 0.006，且没有独立集证据 | 不为微小闭环差异增加实现 |
 
-1. 实现法向/表面感知 endpoint loss，直接对齐 P2S，同时约束 CD 覆盖。
-2. 实现坐标图 + 特征图双图解码器，减少薄面跨表面误连。
-3. 若需要补历史路线，再复训 CVM-006；不再优先投入 LDC/time-stage adapter。
-4. 提交预算允许时，在 `alpha=1.03～1.06` 内做极少量线上校准；A105 已是默认最佳。
+## 历史未提交或未完成
+
+| 方法 | local2/状态 | 结论 |
+|---|---|---|
+| LDC matched-unroll | 70.55，CD 54.50 / P2S 86.60 | 明显损害覆盖，未提交 |
+| CVM-006 | 72.72，历史权重已清理 | 最值得补历史线上验证，但优先级低于当前 adaptive 候选 |
+| CVM-008 | 72.60，曾生成 ZIP，无线上记录 | 低于 CVM-002 |
+| CVM-009/010 conditioning | 因 NCCL 下载 HTTP 429 未完成/未启动 | 不是模型结论，但 conditioning 路线已降级 |
+| PD-001～004 | 71.03～71.40 | pointwise distance gate 路线否定 |
+
+## 下一步优先级
+
+1. **曲率感知、可学习的点分布项**：手工 tangent repulsion 证明 CD 仍有提升空间，但必须让网络联合约束 P2S。
+2. **坐标图 + 法向/特征图双图解码器**：普通法向损失失败不等于 normal-domain message passing 无效；目标是减少薄面跨表面误连。
+3. **带不确定性的自适应步长**：mean/var 已稳定迁移，可进一步让置信度头预测每云或每 patch 步长，并用 CD/P2S 联合验证。
+4. **U-CAN/Noise2Noise 一致性预训练**：利用 noisy-only 数据扩大训练分布，成本较高，排在结构和校准改进之后。
+5. 提交预算允许时，优先线上验证当前 adaptive ZIP；不再优先投入普通 attention、多趟推理、TTA 或更宽网络。

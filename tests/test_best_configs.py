@@ -63,6 +63,10 @@ class BestConfigTests(unittest.TestCase):
         launcher = (ROOT / "scripts/train_ddp.sh").read_text(encoding="utf-8")
         self.assertIn("PYTHON_BIN", launcher)
         self.assertIn('"$PYTHON_BIN" run.py', launcher)
+        self.assertIn("JITTOR_CACHE_PER_RANK", launcher)
+        self.assertIn('rank${rank}', launcher)
+        self.assertIn("OMPI_MCA_orte_tmpdir_base", launcher)
+        self.assertIn("DISABLE_MULTIPROCESSING", launcher)
 
 
 if __name__ == "__main__":

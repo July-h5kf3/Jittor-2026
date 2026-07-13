@@ -23,6 +23,13 @@ SPEC.loader.exec_module(submit_educoder)
 
 
 class SubmitEducoderTests(unittest.TestCase):
+    def test_default_archive_is_current_candidate(self):
+        args = submit_educoder.parse_args([])
+        self.assertEqual(
+            args.zip_path,
+            "submission_results/result_cvm002a105_adaptive_meanvar_a110.zip",
+        )
+
     def test_cookie_parser(self):
         cookie = "autologin_trustie=abc; _educoder_session=session-value"
         self.assertEqual(

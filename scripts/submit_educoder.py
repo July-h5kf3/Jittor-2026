@@ -34,7 +34,9 @@ DEFAULT_COMPETITION = "Jittor-7"
 DEFAULT_CONTAINER_ID = 983
 DEFAULT_STAGE_ID = 588
 DEFAULT_TEAM_ID = 205141
-DEFAULT_ARCHIVE = "submission_results/result_cvm002a105_spcfgfncvm002a105.zip"
+DEFAULT_ARCHIVE = (
+    "submission_results/result_cvm002a105_adaptive_meanvar_a110.zip"
+)
 
 # These are public constants embedded in Educoder's browser bundle.  They are
 # used only to reproduce the request signature required by the public API.
