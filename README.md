@@ -68,6 +68,24 @@ GPU_LIST=0,1,2,3 NP=4 bash scripts/run_best_pipeline.sh
 GPU=0 bash scripts/package_submission.sh
 ```
 
+提交到 Educoder Track2 A 榜前，先安装独立的提交依赖并执行只读检查：
+
+```bash
+pip install -r requirements-submit.txt
+export EDUCODER_COOKIE='从浏览器复制的 Cookie，仅用于当前 shell'
+python scripts/submit_educoder.py --dry-run
+```
+
+确认输出中的 ZIP、账号、队伍、阶段和历史提交均正确后，新增一条提交记录：
+
+```bash
+python scripts/submit_educoder.py --yes
+unset EDUCODER_COOKIE
+```
+
+脚本不会删除或覆盖历史记录；它拒绝同名重复提交，并要求 ZIP 内恰好有 200 个
+`float32 (50000, 3)` 数组。Cookie 只从环境变量读取，禁止写入 `.env`、日志或 Git。
+
 运行配置合同测试：
 
 ```bash

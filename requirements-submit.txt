@@ -1,0 +1,5 @@
+numpy
+requests
+# Keep compatibility with the Python 3.8 / pyOpenSSL stack on the training host.
+cryptography<39
+oss2
