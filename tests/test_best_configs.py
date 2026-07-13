@@ -58,7 +58,7 @@ class BestConfigTests(unittest.TestCase):
             "experiments/spcfgfncvm002_spcf/checkpoint_best.pkl",
         )
         self.assertLessEqual(task.optimizer.lr, 0.00001)
-        self.assertNotIn("initial_best_metric", task.trainer)
+        self.assertEqual(task.trainer.initial_best_metric, 3.794236)
 
     def test_ddp_launcher_uses_an_absolute_python_interpreter(self):
         launcher = (ROOT / "scripts/train_ddp.sh").read_text(encoding="utf-8")

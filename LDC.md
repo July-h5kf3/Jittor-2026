@@ -26,9 +26,8 @@ LDC therefore keeps the complete CVM-002 model and adds only two low-risk ideas:
 - Fine-tuning uses `lr=1e-5`.
 - Only the distance head and zero-initialized LDC adapters are trainable; the
   pretrained velocity trunk remains frozen.
-- The original checkpoint is copied to `checkpoint_baseline.pkl` as an explicit
-  fallback. LDC selects its own best checkpoint because the matched-unroll loss
-  is not numerically comparable with the historical single-unroll loss.
+- The original checkpoint is copied as the LDC fallback and is overwritten only
+  if validation improves beyond the recorded CVM-002 best (`3.794236`).
 
 ## Success criterion
 
