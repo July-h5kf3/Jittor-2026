@@ -2,7 +2,7 @@
 
 本仓库只保留当前最佳方案、复现实验所需的核心代码与关键实验结论。大规模数据集、模型权重、预测结果和提交包仅保存在训练服务器，不进入 Git。
 
-截至 2026-07-05，项目记录中的最佳线上成绩为 **75.51**，对应 **CVM-002：Graph StraightPCF + FiLM + stage-velocity target + deep supervision + multi-scale distance head**。
+截至 2026-07-13，项目记录中的最佳线上成绩仍为 **75.51**，对应 **CVM-002：Graph StraightPCF + FiLM + stage-velocity target + deep supervision + multi-scale distance head**。最新 local2 提交候选是在同一权重上使用 `predict_alpha=1.05`，得分 **72.82**；它只比 `alpha=1.0` 高 0.05，尚不能替代线上已验证的默认方案。
 
 ## 当前最佳方法
 
@@ -23,6 +23,12 @@
 - `configs/task/train_spcfgfncvm002.yaml`
 - `configs/task/predict_spcfgfncvm002.yaml`
 - `configs/model/spcfgfncvm002_{cvm,spcf}.yaml`
+
+local2 提交候选配置：
+
+- `configs/task/predict_spcfgfncvm002a105.yaml`
+- `configs/task/predict_spcfgfncvm002a105_local2.yaml`
+- `configs/model/spcfgfncvm002a105_spcf.yaml`
 
 ## 服务器端保留的最佳产物
 
@@ -56,7 +62,7 @@ dataset_test_noisy/shapenet/<synset>/<model>/noisy.npy
 GPU_LIST=0,1,2,3 NP=4 bash scripts/run_best_pipeline.sh
 ```
 
-生成新的提交包：
+生成新的提交包（默认使用 CVM-002 alpha 1.05 候选）：
 
 ```bash
 GPU=0 bash scripts/package_submission.sh
@@ -80,6 +86,8 @@ python -m unittest tests.test_best_configs -v
 | MS-A106 | multi-scale distance，alpha=1.06 | 72.15 | 75.47 | P2S 较强 |
 | CVM-001 | stage velocity | 72.54 | 74.90 | 单独换 target 不稳定 |
 | **CVM-002** | **stage velocity + deep supervision** | **72.77** | **75.51** | **当前最佳** |
+| CVM-002 A105 | `predict_alpha=1.05`，单次推理 | 72.82 | 未提交 | local2 +0.05，小于可靠排序阈值；作为低风险提交候选 |
+| LDC matched-unroll | 冻结 velocity trunk，学习 distance/stage adapter，并匹配两步展开 | 70.55 | 未提交 | P2S 86.60，但 CD 降至 54.50；否定 |
 | CVM-006 | 75% stage-velocity blend | 72.72 | 未提交 | 最值得补线上验证 |
 | CVM-008 | multi-scale velocity encoder | 72.60 | 未记录 | 没有超过 CVM-002 |
 | CVM-011 | 更强噪声区间 | 71.97 | 未提交 | 简单加大噪声反而退化 |
@@ -91,10 +99,10 @@ python -m unittest tests.test_best_configs -v
 
 | 优先级 | 方法 | 状态 | 理由与风险 |
 |---:|---|---|---|
-| 1 | CVM-002 与 MS-A106 预测位移融合（0.25/0.50/0.75） | 未尝试 | 两者线上 CD/P2S 互补，成本最低；仍需警惕推理侧不迁移 |
-| 2 | CVM-010：CVM-002 + time/stage conditioning | 配置和代码已准备，未训练 | 在当前最佳模型上只增加显式阶段条件，变量最干净 |
-| 3 | CVM-002 小范围 distance scale（0.97/1.03/1.06） | 未尝试 | 可调 CD/P2S Pareto，但历史推理 trick 风险较高 |
-| 4 | 坐标图 + 特征图双图解码器 | 未实现 | 针对薄面跨表面误连和尖锐边过度平滑，属于中风险结构改进 |
+| 1 | CVM-002 A105 线上验证 | 配置和提交脚本已准备 | local2 72.82，但仅高 0.05；一次线上提交即可判断是否迁移 |
+| 2 | 法向/表面感知 endpoint loss | 未实现 | 官方一半分数来自 P2S，数据管线已有法向；比继续加宽网络更直接对齐指标 |
+| 3 | 坐标图 + 特征图双图解码器 | 未实现 | 针对薄面跨表面误连和尖锐边过度平滑，属于中风险结构改进 |
+| 4 | CVM-006 复训后线上验证 | 历史 local2 72.72，权重已清理 | 验证 stage/full blend 是否比纯 stage target 更稳 |
 
 ## 主要经验
 
@@ -102,6 +110,7 @@ python -m unittest tests.test_best_configs -v
 2. attention、普通 TTA、多趟推理、逐点 distance gate 和单纯加宽模型均未带来可靠线上收益。
 3. local2 可用于排除明显失败的方法，但不能可靠判断 0.1 分以内的线上排序。
 4. 后续实验应优先改变速度场监督和 CD/P2S Pareto，而不是继续堆叠后端模块。
+5. distance/stage adapter 的单步验证劣于基线，matched-unroll 又显著损害 CD；后续不再优先投入这条 conditioning 路线。
 
 ## 参考文献
 

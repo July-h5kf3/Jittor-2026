@@ -32,6 +32,8 @@ class BestConfigTests(unittest.TestCase):
             "train_spcfgfncvm002.yaml",
             "predict_spcfgfncvm002.yaml",
             "predict_spcfgfncvm002_local2.yaml",
+            "predict_spcfgfncvm002a105.yaml",
+            "predict_spcfgfncvm002a105_local2.yaml",
         ):
             task = OmegaConf.load(ROOT / "configs/task" / name)
             for kind in ("data", "transform", "system", "model"):
@@ -40,6 +42,22 @@ class BestConfigTests(unittest.TestCase):
                     (ROOT / "configs" / kind / f"{component}.yaml").is_file(),
                     f"missing {kind}/{component}.yaml referenced by {name}",
                 )
+
+    def test_alpha105_submission_candidate_contract(self):
+        model = OmegaConf.load(
+            ROOT / "configs/model/spcfgfncvm002a105_spcf.yaml"
+        )
+        task = OmegaConf.load(
+            ROOT / "configs/task/predict_spcfgfncvm002a105.yaml"
+        )
+        self.assertEqual(model.predict_alpha, 1.05)
+        self.assertEqual(model.predict_passes, 1)
+        self.assertEqual(model.predict_tta, 0)
+        self.assertFalse(model.predict_fusion)
+        self.assertEqual(
+            task.load_ckpt,
+            "experiments/spcfgfncvm002_spcf/checkpoint_best.pkl",
+        )
 
     def test_ddp_launcher_uses_an_absolute_python_interpreter(self):
         launcher = (ROOT / "scripts/train_ddp.sh").read_text(encoding="utf-8")
