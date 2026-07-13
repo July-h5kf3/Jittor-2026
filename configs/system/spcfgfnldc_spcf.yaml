@@ -1,0 +1,4 @@
+__target__: vm
+
+ckpt_save_dir: experiments/spcfgfnldc_spcf
+ckpt_save_name: checkpoint
