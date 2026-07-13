@@ -68,18 +68,22 @@ GPU_LIST=0,1,2,3 NP=4 bash scripts/run_best_pipeline.sh
 GPU=0 bash scripts/package_submission.sh
 ```
 
-提交到 Educoder Track2 A 榜前，先安装独立的提交依赖并执行只读检查：
+提交到 Educoder Track2 A 榜前，先把独立提交依赖安装到数据盘，并执行只读检查：
 
 ```bash
-pip install -r requirements-submit.txt
+export SUBMIT_DEPS=/root/data-tmp/submit_deps
+export TMPDIR=/root/data-tmp/tmp
+mkdir -p "$SUBMIT_DEPS" "$TMPDIR"
+python -m pip install --no-cache-dir --upgrade --target "$SUBMIT_DEPS" \
+  -r requirements-submit.txt
 export EDUCODER_COOKIE='从浏览器复制的 Cookie，仅用于当前 shell'
-python scripts/submit_educoder.py --dry-run
+PYTHONPATH="$SUBMIT_DEPS" python scripts/submit_educoder.py --dry-run
 ```
 
 确认输出中的 ZIP、账号、队伍、阶段和历史提交均正确后，新增一条提交记录：
 
 ```bash
-python scripts/submit_educoder.py --yes
+PYTHONPATH="$SUBMIT_DEPS" python scripts/submit_educoder.py --yes
 unset EDUCODER_COOKIE
 ```
 

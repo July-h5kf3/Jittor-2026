@@ -1,5 +1,6 @@
 numpy
 requests
-# Keep compatibility with the Python 3.8 / pyOpenSSL stack on the training host.
-cryptography<39
+# The training host ships pyOpenSSL 20.0.1. cryptography 38 removes an
+# OpenSSL flag that this pyOpenSSL release still imports, so keep it below 38.
+cryptography<38
 oss2
