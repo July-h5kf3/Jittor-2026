@@ -140,6 +140,8 @@ unset EDUCODER_COOKIE
 | CORE256 中心监督 | 72.99724 | -0.00317 | 硬掩码忽略真实拼接输出 |
 | CORE384 中心监督 | 73.00200 | +0.00158 | 96.5% 覆盖仍远低于保留门槛 |
 | TSTRATA 端点分层采样 | 72.99515 | -0.00527 | P2S 上升但 CD 下降 |
+| feature + position 双图 | 72.98807 | -0.01235（V5 内部 -0.00693） | 严格同配方 control 下无收益，删除 |
+| UGD-lite pristine GMM | 72.70767 | -0.29275（V5 mean/var -0.28733） | 21/62 云选 alpha 下界，明显过度收缩 |
 | bilateral IMLS | OOF 72.86087 | -0.01102 | 表面损失无独立收益 |
 | TV-PC / geometry / tangent repulsion | - | - | 过平滑、过拟合或 CD/P2S 互换，均删除 |
 
@@ -149,9 +151,9 @@ unset EDUCODER_COOKIE
 
 | 优先级 | 方向 | 当前状态 | 理由 |
 |---:|---|---|---|
-| 1 | 曲率感知、可学习的点分布项 | 未尝试 | 手工 repulsion 能提高 CD，但必须联合守住 P2S |
-| 2 | 坐标图 + 法向/特征图双图解码器 | 未尝试 | 目标是减少薄面跨表面误连；比继续堆普通 attention 更有针对性 |
-| 3 | 不确定性驱动的每云/每 patch 步长 | 未尝试 | mean/var 已显示稳定迁移，可进一步学习置信度 |
+| 1 | 不确定性驱动的每云/每 patch 步长 | 未尝试 | mean/var 是目前唯一跨口径稳定迁移的增益，可进一步学习置信度 |
+| 2 | 曲率感知、可学习的点分布项 | 未尝试 | 手工 repulsion 能提高 CD，但必须联合守住 P2S |
+| 3 | 法向/曲率域消息传递 | 部分探索 | 纯坐标双图已否定；后续若尝试，应显式构造切平面或曲率邻接 |
 | 4 | U-CAN / Noise2Noise 一致性预训练 | 未尝试 | 可利用 noisy-only 数据扩大分布，但训练成本较高 |
 | 5 | CVM-006 线上补测 | 尝试但未提交 | 历史 local2 72.72，优先级低于当前 adaptive ZIP |
 
@@ -178,3 +180,6 @@ git diff --check
 - Li et al., **Learning Normals of Noisy Points by Local Gradient-Aware Surface Filtering**. [arXiv:2507.03394](https://arxiv.org/abs/2507.03394)
 - Xu et al., **Gradient-based Point Cloud Denoising with Uniformity**. [arXiv:2207.10279](https://arxiv.org/abs/2207.10279)
 - Na et al., **A Lennard-Jones Layer for Distribution Normalization**. [arXiv:2402.03287](https://arxiv.org/abs/2402.03287)
+- **GD-GCN: Geometry-Driven Graph Convolutional Network for Point Cloud Denoising**. [arXiv:2411.14158](https://arxiv.org/abs/2411.14158)
+- **UGD: Unsupervised Point Cloud Denoising via a Learned Pristine Geometry Prior**. [arXiv:2604.16976](https://arxiv.org/abs/2604.16976)
+- **PQDT: Pseudo-Query Dual Transformer for Point Cloud Denoising**. [arXiv:2605.25127](https://arxiv.org/abs/2605.25127)
