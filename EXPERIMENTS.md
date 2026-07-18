@@ -34,6 +34,13 @@
 - 对照：`train_spcfgfnpnx001_cvm.yaml` 与 ROT-001 使用同一初始化、真实旋转 transform、四卡 batch、seed 和优化器；唯一变量是 `encoder_type=pointnext_lite`。下一门槛是 1000 点 CUDA forward/backward 的峰值显存与吞吐，合格后才进入完整 CVM/SPCF 训练。
 - B 榜属性：50,000 点整云仍走固定 1000 点 patch；新增计算只在 250 点 coarse set 上进行，复杂度与整云点数近似线性扩展。
 
+## COND-001：显式 remaining-time/stage 条件（排队）
+
+- 历史 CVM-009/010 只因 NCCL 下载失败而未启动或未完成，没有 checkpoint 或指标，不能视为模型否定。
+- 唯一变量：在每个 velocity encoder 的 FiLM 中加入 `[remaining_time, stage_index]`；其余初始化、旋转、噪声、模型、优化器与 seed 对齐 ROT-001。
+- 推理可用性：remaining time 来自 distance head 的当前剩余步长，stage index 是公开的模块序号，不读取 clean、mesh 或隐藏信息。
+- 风险控制：condition 的最终 FiLM 层零初始化；旧 `state_dict` 注入后，对任意非零 condition 的初始预测与 control bitwise 相同。待 ROT-001 完成后按信息收益决定是否先于 PNX-001 正式训练。
+
 ## 已有线上反馈
 
 | 方法 | local2 | 线上总分 | 线上 CD | 线上 P2S | 结论 |

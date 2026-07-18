@@ -1,0 +1,15 @@
+__target__: StraightPCFModule
+stage: cvm
+frame_knn: 32
+num_train_points: 128
+feat_embedding_dim: 256
+decoder_hidden_dim: 64
+dsm_sigma: 0.01
+num_modules: 4
+tot_its: 2
+decoder_type: graph
+distance_estimation: True
+film: True
+cvm_dir_target: stage_velocity
+cvm_deep_sup: True
+cvm_condition: time_stage
