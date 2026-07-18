@@ -26,12 +26,12 @@
 - 四轨迹扫描固定原 `55/10/35` 比例，只把 seed789 权重从 5% 扫到 40%，raw-alpha gate、CV gamma 和 two-pass residual 全部不变。10% 时最高：CD/P2S/总分 `57.26989 / 90.17347 / 73.72168`，相对 73.71935 为 `+0.00233`，95% CI `[+0.00104,+0.00366]`，LOCO 范围 `[+0.00132,+0.00262]`；15% 后 CD 开始回撤，35% 以上总分显著下降。
 - 决定：增益比 `+0.05` 保留门槛低一个数量级，不生成提交包、不把第四模型加入 A 榜候选；checkpoint 和 canonical raw 预测保留作误差研究证据。
 
-## PNX-001：PointNeXt-lite 层次化残差编码器（CPU smoke 通过）
+## PNX-001：PointNeXt-lite 层次化残差编码器（CUDA smoke 通过）
 
 - 假设：普通全局注意力、Point Transformer 和 RoPE 已被否定，但当前编码器始终停留在 1000 点单尺度图；显式 coarse context 可能减少局部 patch 的覆盖收缩，从而优先改善 CD。
-- 唯一结构变量：在已验证的 EdgeConv 特征后加入窄通道层次残差分支。按距离排序的 patch 每 4 点确定一个 deterministic coarse seed，位置 kNN 聚合 fine 特征，在 coarse 图做一次残差更新，再用 inverse-distance 3-NN 回插；不引入全局 attention。
-- 风险控制：最终融合投影零初始化，因此现有 checkpoint 加载后的初始输出与基线 bitwise 相同。CPU 测试覆盖非等长 query/source gather、17 点非整除 stride、分支恒等性和基线 `state_dict` 迁移，3 项均通过。
-- 对照：`train_spcfgfnpnx001_cvm.yaml` 与 ROT-001 使用同一初始化、真实旋转 transform、四卡 batch、seed 和优化器；唯一变量是 `encoder_type=pointnext_lite`。下一门槛是 1000 点 CUDA forward/backward 的峰值显存与吞吐，合格后才进入完整 CVM/SPCF 训练。
+- 唯一结构变量：在已验证的 EdgeConv 特征后加入窄通道层次残差分支。按距离排序的 patch 每 4 点确定一个 deterministic coarse seed，64 维、k=16 的位置 kNN 聚合 fine 特征，在 coarse 图做一次残差更新，再用 inverse-distance 3-NN 回插；不引入全局 attention。单卡 batch=32 smoke 曾使 PNX 与原 CVM-002 control 同样 OOM；检查 Jittor `Dataset` 源码确认正式全局 batch=32 会被四 rank 切为每 GPU 8，因此该 OOM 不构成结构否定，显存判定必须使用 per-rank batch=8。
+- 风险控制：最终融合投影零初始化，因此现有 checkpoint 加载后的初始输出与基线 bitwise 相同。CPU 测试覆盖非等长 query/source gather、17 点非整除 stride、分支恒等性和基线 `state_dict` 迁移，3 项均通过。V100 CUDA 的 per-rank `batch=8, N=1000` forward/backward 也通过：allocator 为 `5.98 GiB`，control 为 `5.61 GiB`；单步约 `0.85s` 对 `0.63s`，增加约 0.37 GiB、34% 时间，满足 16GB 与 B 榜固定 patch 约束。
+- 对照：`train_spcfgfnpnx001_cvm.yaml` 与 ROT-001 使用同一初始化、真实旋转 transform、四卡 batch、seed 和优化器；唯一变量是 `encoder_type=pointnext_lite`。下一门槛是正式四卡 CVM/SPCF 与 canonical local2 指标。
 - B 榜属性：50,000 点整云仍走固定 1000 点 patch；新增计算只在 250 点 coarse set 上进行，复杂度与整云点数近似线性扩展。
 
 ## COND-001：显式 remaining-time/stage 条件（排队）

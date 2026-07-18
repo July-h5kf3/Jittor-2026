@@ -35,6 +35,9 @@ class PointNeXtLiteTests(unittest.TestCase):
         control = OmegaConf.load(ROOT / "configs" / "model" / "spcfgfncvm002_cvm.yaml")
         self.assertEqual(cvm.encoder_type, "pointnext_lite")
         self.assertEqual(spcf.encoder_type, "pointnext_lite")
+        self.assertEqual(cvm.hierarchy_hidden_dim, 64)
+        self.assertEqual(cvm.hierarchy_stride, 4)
+        self.assertEqual(cvm.hierarchy_k, 16)
         self.assertNotIn("encoder_type", control)
 
         for name in (
@@ -86,10 +89,13 @@ class PointNeXtLiteTests(unittest.TestCase):
     )
     def test_full_batch_cuda_forward_backward(self):
         jt.flags.use_cuda = 1
-        batch_size = int(os.environ.get("PNX_SMOKE_BATCH", "32"))
+        # Dataset.batch_size is global under Jittor MPI. The formal 32/4 setup
+        # therefore executes eight samples per rank/GPU.
+        batch_size = int(os.environ.get("PNX_SMOKE_BATCH", "8"))
         point_count = int(os.environ.get("PNX_SMOKE_POINTS", "1000"))
+        model_name = os.environ.get("PNX_SMOKE_MODEL", "spcfgfnpnx001_cvm")
         model_config = OmegaConf.load(
-            ROOT / "configs" / "model" / "spcfgfnpnx001_cvm.yaml"
+            ROOT / "configs" / "model" / f"{model_name}.yaml"
         )
         transform_config = OmegaConf.load(
             ROOT / "configs" / "transform" / "spcf_n_rot001.yaml"
@@ -124,9 +130,11 @@ class PointNeXtLiteTests(unittest.TestCase):
         optimizer.backward(loss)
         optimizer.step()
         jt.sync_all()
+        jt.display_memory_info()
         loss_value = float(loss.item())
         print(
-            f"PNX CUDA smoke batch={batch_size} points={point_count} "
+            f"PNX CUDA smoke model={model_name} batch={batch_size} "
+            f"points={point_count} "
             f"loss={loss_value:.6f}"
         )
         self.assertTrue(np.isfinite(loss_value))
