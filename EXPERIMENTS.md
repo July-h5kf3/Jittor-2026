@@ -10,6 +10,13 @@
 - 已观察到本地与线上幅度不一致；local2 小差距只能用于排除，最终仍以线上反馈为准。
 - patch 推理的随机状态会随样本顺序推进；严格对照必须使用同一 canonical 列表顺序，不能拼接倒序或分片推理结果。
 
+## 2026-07-18：ROT-001（进行中）
+
+- 假设：`AugmentLinear` 只更新 mesh 顶点，未更新已经采样出的 clean/noisy 点，因此历史配置中的旋转与缩放实际为空操作。EdgeConv 不是旋转等变网络；让 paired clean/noisy 点真正接受随机旋转，可能改善跨方向的表面覆盖和 CD，同时保持 P2S。
+- 唯一变量：修复 `Asset.transform()` 的采样点语义，并在独立配置中只启用 `rotate_p=0.5`；`scale_p=0.0`，噪声、模型、优化器、四卡 batch 与 seed 均保持 CVM-002 配方。
+- 训练链：`train_spcfgfnrot001_cvm.yaml` -> `train_spcfgfnrot001.yaml`，正式训练固定 `GPU_LIST=0,1,2,3 NP=4 --seed 123`。
+- 判定：完成 canonical local2 raw/mean-var/two-pass 全口径评测，并报告配对 CI、分类别与 leave-one-category-out；普通保留门槛仍为 `+0.05`。
+
 ## 已有线上反馈
 
 | 方法 | local2 | 线上总分 | 线上 CD | 线上 P2S | 结论 |

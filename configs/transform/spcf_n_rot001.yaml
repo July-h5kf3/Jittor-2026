@@ -1,0 +1,39 @@
+train_transform:
+  augments:
+    - __target__: sample
+      num_samples: 32768
+      num_vertex_samples: 1024
+    - __target__: normalize_pc
+    - __target__: add_noise
+      noise_std_min: 0.008
+      noise_std_max: 0.014
+      outlier_frac: 0.02
+      outlier_scale: 3.0
+    - __target__: linear
+      scale: [1.0, 1.0]
+      rotate_x_range: [-180, 180]
+      rotate_y_range: [-180, 180]
+      rotate_z_range: [-180, 180]
+      scale_p: 0.0
+      rotate_p: 0.5
+    - __target__: patch_spcf
+      patch_size: 1000
+      num_patches: 1
+
+validate_transform:
+  augments:
+    - __target__: sample
+      num_samples: 32768
+      num_vertex_samples: 1024
+    - __target__: normalize_pc
+    - __target__: add_noise
+      noise_std_min: 0.011
+      noise_std_max: 0.011
+      outlier_frac: 0.02
+      outlier_scale: 3.0
+    - __target__: patch_spcf
+      patch_size: 1000
+      num_patches: 1
+
+predict_transform:
+  augments: []

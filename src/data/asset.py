@@ -26,9 +26,11 @@ class Asset():
         """trans: 4x4 affine matrix"""
         def _apply(v: ndarray, trans: ndarray) -> ndarray:
             return np.matmul(v, trans[:3, :3].transpose()) + trans[:3, 3]
-        
-        if self.vertices is not None:
-            self.vertices = _apply(self.vertices, trans)
+
+        for name in ("vertices", "sampled_vertices", "sampled_vertices_noisy"):
+            value = getattr(self, name)
+            if value is not None:
+                setattr(self, name, _apply(value, trans))
 
 class Exporter(): # a simple parser
     
