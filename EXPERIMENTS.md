@@ -26,9 +26,13 @@
 - 四轨迹扫描固定原 `55/10/35` 比例，只把 seed789 权重从 5% 扫到 40%，raw-alpha gate、CV gamma 和 two-pass residual 全部不变。10% 时最高：CD/P2S/总分 `57.26989 / 90.17347 / 73.72168`，相对 73.71935 为 `+0.00233`，95% CI `[+0.00104,+0.00366]`，LOCO 范围 `[+0.00132,+0.00262]`；15% 后 CD 开始回撤，35% 以上总分显著下降。
 - 决定：增益比 `+0.05` 保留门槛低一个数量级，不生成提交包、不把第四模型加入 A 榜候选；checkpoint 和 canonical raw 预测保留作误差研究证据。
 
-## 新骨架候选：PointNeXt-lite
+## PNX-001：PointNeXt-lite 层次化残差编码器（CPU smoke 通过）
 
-普通全局注意力、Point Transformer 和 RoPE 路线已有明确否定结果，因此不重复。下一新骨架候选采用 PointNeXt 风格的层次化局部残差聚合：保持 1000 点 patch 接口，以窄通道局部块和降采样上下文替代全局注意力，优先改善当前明显偏低的 CD 覆盖；先做单步显存/吞吐 smoke，再决定是否进入完整四卡 CVM/SPCF 训练。该方向对 50,000 点仍使用固定 patch，推理复杂度可控，也比简单集成更适合作为 B 榜单模型方案。
+- 假设：普通全局注意力、Point Transformer 和 RoPE 已被否定，但当前编码器始终停留在 1000 点单尺度图；显式 coarse context 可能减少局部 patch 的覆盖收缩，从而优先改善 CD。
+- 唯一结构变量：在已验证的 EdgeConv 特征后加入窄通道层次残差分支。按距离排序的 patch 每 4 点确定一个 deterministic coarse seed，位置 kNN 聚合 fine 特征，在 coarse 图做一次残差更新，再用 inverse-distance 3-NN 回插；不引入全局 attention。
+- 风险控制：最终融合投影零初始化，因此现有 checkpoint 加载后的初始输出与基线 bitwise 相同。CPU 测试覆盖非等长 query/source gather、17 点非整除 stride、分支恒等性和基线 `state_dict` 迁移，3 项均通过。
+- 对照：`train_spcfgfnpnx001_cvm.yaml` 与 ROT-001 使用同一初始化、真实旋转 transform、四卡 batch、seed 和优化器；唯一变量是 `encoder_type=pointnext_lite`。下一门槛是 1000 点 CUDA forward/backward 的峰值显存与吞吐，合格后才进入完整 CVM/SPCF 训练。
+- B 榜属性：50,000 点整云仍走固定 1000 点 patch；新增计算只在 250 点 coarse set 上进行，复杂度与整云点数近似线性扩展。
 
 ## 已有线上反馈
 

@@ -97,12 +97,13 @@ class SelfAttentionBlock(nn.Module):
 
 
 def _gather_neighbours(feat, idx):
-    """feat: (B,N,C), idx: (B,N,k) -> (B,N,k,C)."""
-    B, N, C = feat.shape
+    """Gather source features for either self-kNN or cross-set queries."""
+    B, source_count, C = feat.shape
+    query_count = idx.shape[1]
     k = idx.shape[2]
-    base = (jt.arange(B) * N).reshape(B, 1, 1)
+    base = (jt.arange(B) * source_count).reshape(B, 1, 1)
     flat = (idx + base).reshape(-1)
-    return feat.reshape(B * N, C)[flat].reshape(B, N, k, C)
+    return feat.reshape(B * source_count, C)[flat].reshape(B, query_count, k, C)
 
 
 class PointTransformerBlock(nn.Module):
@@ -226,6 +227,102 @@ class NoiseAwareRoPEAttention(nn.Module):
         return self.norm(x + self.proj(out))
 
 
+class PointNeXtLiteHierarchy(nn.Module):
+    """A narrow hierarchical residual branch for fixed-size point patches.
+
+    The input ordering produced by patch extraction is distance-sorted, so a
+    strided subset gives a cheap, deterministic coarse set without a Python FPS
+    loop. Coarse features pool position-kNN fine features, receive one local
+    residual update, and are interpolated back with inverse-distance 3-NN.
+    The final projection is zero-initialized so adding this branch preserves a
+    loaded EdgeConv checkpoint exactly at initialization.
+    """
+
+    def __init__(self, dim, hidden_dim=64, stride=4, k=16, interpolation_k=3):
+        super().__init__()
+        if stride < 2:
+            raise ValueError("PointNeXt-lite stride must be at least 2")
+        if k < 1 or interpolation_k < 1:
+            raise ValueError("PointNeXt-lite neighbour counts must be positive")
+        self.hidden_dim = hidden_dim
+        self.stride = stride
+        self.k = k
+        self.interpolation_k = interpolation_k
+        self.reduce = nn.Sequential(nn.Linear(dim, hidden_dim), nn.ReLU())
+        message_dim = hidden_dim + 4
+        self.pool_mlp = nn.Sequential(
+            nn.Linear(message_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+        )
+        self.pool_skip = nn.Linear(hidden_dim, hidden_dim)
+        self.coarse_mlp = nn.Sequential(
+            nn.Linear(message_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+        )
+        self.coarse_out = nn.Linear(hidden_dim, hidden_dim)
+        self.fuse = nn.Linear(2 * hidden_dim, dim)
+        self.fuse.weight.assign(jt.zeros_like(self.fuse.weight))
+        self.fuse.bias.assign(jt.zeros_like(self.fuse.bias))
+
+    @staticmethod
+    def _relative_geometry(center_pos, neighbour_pos):
+        rel = neighbour_pos - center_pos.unsqueeze(2)
+        dist = jt.sqrt((rel ** 2).sum(-1, keepdims=True) + 1e-12)
+        radius = jt.maximum(dist.max(dim=2, keepdims=True), jt.ones_like(dist[:, :, :1]) * 1e-6)
+        return jt.concat([rel / radius, dist / radius], dim=-1)
+
+    def _aggregate(self, center_pos, center_feat, source_pos, source_feat, k, offset, mlp):
+        available = source_pos.shape[1] - offset
+        k = min(k, available)
+        idx = get_knn_idx(center_pos, source_pos, k, offset=offset)
+        neighbour_pos = _gather_neighbours(source_pos, idx)
+        neighbour_feat = _gather_neighbours(source_feat, idx)
+        geometry = self._relative_geometry(center_pos, neighbour_pos)
+        message = jt.concat(
+            [neighbour_feat - center_feat.unsqueeze(2), geometry],
+            dim=-1,
+        )
+        return jt.max(mlp(message), dim=2)
+
+    def execute(self, x, pos):
+        # x: (B,N,C), pos: (B,N,3)
+        fine = self.reduce(x)
+        coarse_pos = pos[:, ::self.stride, :]
+        coarse_seed = fine[:, ::self.stride, :]
+        coarse = self.pool_skip(coarse_seed) + self._aggregate(
+            coarse_pos,
+            coarse_seed,
+            pos,
+            fine,
+            self.k,
+            0,
+            self.pool_mlp,
+        )
+        if coarse_pos.shape[1] > 1:
+            coarse_message = self._aggregate(
+                coarse_pos,
+                coarse,
+                coarse_pos,
+                coarse,
+                self.k,
+                1,
+                self.coarse_mlp,
+            )
+            coarse = coarse + self.coarse_out(nn.relu(coarse_message))
+
+        interp_k = min(self.interpolation_k, coarse_pos.shape[1])
+        interp_idx = get_knn_idx(pos, coarse_pos, interp_k)
+        neighbour_pos = _gather_neighbours(coarse_pos, interp_idx)
+        neighbour_feat = _gather_neighbours(coarse, interp_idx)
+        dist = jt.sqrt(((pos.unsqueeze(2) - neighbour_pos) ** 2).sum(-1) + 1e-12)
+        weight = 1.0 / (dist + 1e-6)
+        weight = weight / (weight.sum(dim=2, keepdims=True) + 1e-8)
+        interpolated = (neighbour_feat * weight.unsqueeze(-1)).sum(dim=2)
+        return x + self.fuse(jt.concat([fine, interpolated], dim=-1))
+
+
 class FeatureExtraction(nn.Module):
     def __init__(
         self,
@@ -237,12 +334,19 @@ class FeatureExtraction(nn.Module):
         multiscale=False,
         film=False,
         condition_dim=0,
+        encoder_type='edgeconv',
+        hierarchy_hidden_dim=64,
+        hierarchy_stride=4,
+        hierarchy_k=16,
     ):
         super().__init__()
 
         self.k = k
         self.input_dim = input_dim
         self.embedding_dim = embedding_dim
+        self.encoder_type = encoder_type
+        if encoder_type not in ('edgeconv', 'pointnext_lite'):
+            raise ValueError(f"unsupported encoder_type: {encoder_type}")
         self.distance_estimation = distance_estimation
         self.multiscale = multiscale
         self.ms_ks = [16, 32]   # C3 multi-scale encoder kNN scales (fine+base; max=baseline -> no extra peak mem)
@@ -269,6 +373,13 @@ class FeatureExtraction(nn.Module):
         self.attention = attention
         if attention:
             self.attn = NoiseAwareRoPEAttention(embedding_dim, k=16)
+        if encoder_type == 'pointnext_lite':
+            self.hierarchy = PointNeXtLiteHierarchy(
+                dim=embedding_dim,
+                hidden_dim=hierarchy_hidden_dim,
+                stride=hierarchy_stride,
+                k=hierarchy_k,
+            )
 
     # ========= edge_index 构建 =========
     def get_edge_index(self, x, k=None):
@@ -343,6 +454,9 @@ class FeatureExtraction(nn.Module):
 
         if self.attention:
             x3 = self.attn(x3, pos)   # position-aware (Point Transformer) attention
+
+        if self.encoder_type == 'pointnext_lite':
+            x3 = self.hierarchy(x3, pos)
 
         if self.film:
             sig = self._sigma_hat(pos)                        # (B,1)

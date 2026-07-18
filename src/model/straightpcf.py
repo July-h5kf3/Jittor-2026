@@ -64,6 +64,10 @@ class VelocityNet(nn.Module):
         multiscale=False,
         film=False,
         condition_dim=0,
+        encoder_type='edgeconv',
+        hierarchy_hidden_dim=64,
+        hierarchy_stride=4,
+        hierarchy_k=16,
     ):
         super().__init__()
         self.condition_dim = int(condition_dim or 0)
@@ -75,6 +79,10 @@ class VelocityNet(nn.Module):
             multiscale=multiscale,
             film=film,
             condition_dim=self.condition_dim,
+            encoder_type=encoder_type,
+            hierarchy_hidden_dim=hierarchy_hidden_dim,
+            hierarchy_stride=hierarchy_stride,
+            hierarchy_k=hierarchy_k,
         )
         self.decoder = _make_decoder(decoder_type, self.encoder.embedding_dim, 3, decoder_hidden_dim)
 
@@ -115,6 +123,11 @@ class StraightPCFModule(ModelSpec):
         self.multiscale = cfg.get('multiscale', False)      # C3 multi-scale encoder
         self.distance_multiscale = cfg.get('distance_multiscale', self.multiscale)
         self.film = cfg.get('film', False)                  # C4 FiLM conditioning
+        self.encoder_type = cfg.get('encoder_type', 'edgeconv')
+        assert self.encoder_type in ('edgeconv', 'pointnext_lite'), self.encoder_type
+        self.hierarchy_hidden_dim = int(cfg.get('hierarchy_hidden_dim', 64))
+        self.hierarchy_stride = int(cfg.get('hierarchy_stride', 4))
+        self.hierarchy_k = int(cfg.get('hierarchy_k', 16))
         self.cvm_deep_sup = cfg.get('cvm_deep_sup', False)   # C1: deep-supervise final CVM waypoint->clean
         self.cvm_dir_target = cfg.get('cvm_dir_target', 'full_residual')
         assert self.cvm_dir_target in ('full_residual', 'stage_velocity', 'blend'), self.cvm_dir_target
@@ -147,6 +160,10 @@ class StraightPCFModule(ModelSpec):
                 multiscale=self.multiscale,
                 film=self.film,
                 condition_dim=self.velocity_condition_dim,
+                encoder_type=self.encoder_type,
+                hierarchy_hidden_dim=self.hierarchy_hidden_dim,
+                hierarchy_stride=self.hierarchy_stride,
+                hierarchy_k=self.hierarchy_k,
              )
              for _ in range(self.num_modules)]
         )
@@ -159,6 +176,10 @@ class StraightPCFModule(ModelSpec):
                 attention=self.attention,
                 multiscale=self.distance_multiscale,
                 film=self.film,
+                encoder_type=self.encoder_type,
+                hierarchy_hidden_dim=self.hierarchy_hidden_dim,
+                hierarchy_stride=self.hierarchy_stride,
+                hierarchy_k=self.hierarchy_k,
             )
             if self.pointwise_distance and self.pointwise_distance_mode == 'residual':
                 self.patch_decoder = _make_decoder(
