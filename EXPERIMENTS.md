@@ -17,6 +17,19 @@
 - 训练链：`train_spcfgfnrot001_cvm.yaml` -> `train_spcfgfnrot001.yaml`，正式训练固定 `GPU_LIST=0,1,2,3 NP=4 --seed 123`。
 - 判定：完成 canonical local2 raw/mean-var/two-pass 全口径评测，并报告配对 CI、分类别与 leave-one-category-out；普通保留门槛仍为 `+0.05`。
 
+## 2026-07-18：seed789 第四轨迹（否定）
+
+- checkpoint：`experiments/spcfgfncvm002seed789_spcf/checkpoint_best.pkl`，SHA256 `234f61d80bd14365178d5dbc3ac5e29cfa87946e5e897562440ef8f66a5ef408`。
+- canonical local2 推理：单张 V100，62 云，28 分 37 秒，推理显存约 10.0 GiB。
+- 单模型 raw CD/P2S/总分：`56.96503 / 88.69052 / 72.82778`。
+- 单模型 mean/var：`57.19747 / 88.79085 / 72.99416`；相对同次重建 baseline 为 CD `+0.02863`、P2S `-0.03213`、总分 `-0.00175`，总分 95% CI `[-0.02336,+0.02182]`。这是近中性的 CD/P2S 交换，不是单模型提升。
+- 四轨迹扫描固定原 `55/10/35` 比例，只把 seed789 权重从 5% 扫到 40%，raw-alpha gate、CV gamma 和 two-pass residual 全部不变。10% 时最高：CD/P2S/总分 `57.26989 / 90.17347 / 73.72168`，相对 73.71935 为 `+0.00233`，95% CI `[+0.00104,+0.00366]`，LOCO 范围 `[+0.00132,+0.00262]`；15% 后 CD 开始回撤，35% 以上总分显著下降。
+- 决定：增益比 `+0.05` 保留门槛低一个数量级，不生成提交包、不把第四模型加入 A 榜候选；checkpoint 和 canonical raw 预测保留作误差研究证据。
+
+## 新骨架候选：PointNeXt-lite
+
+普通全局注意力、Point Transformer 和 RoPE 路线已有明确否定结果，因此不重复。下一新骨架候选采用 PointNeXt 风格的层次化局部残差聚合：保持 1000 点 patch 接口，以窄通道局部块和降采样上下文替代全局注意力，优先改善当前明显偏低的 CD 覆盖；先做单步显存/吞吐 smoke，再决定是否进入完整四卡 CVM/SPCF 训练。该方向对 50,000 点仍使用固定 patch，推理复杂度可控，也比简单集成更适合作为 B 榜单模型方案。
+
 ## 已有线上反馈
 
 | 方法 | local2 | 线上总分 | 线上 CD | 线上 P2S | 结论 |

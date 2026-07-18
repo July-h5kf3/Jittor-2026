@@ -5,7 +5,7 @@
 截至 2026-07-14：
 
 - 线上最佳：**76.04**，CVM-002 A105 与独立重训模型 1:1 输出集成，再做 mean/var 校准；CD/P2S = **64.60 / 87.47**（submission `39221`）。
-- 当前 local2 最好：baseline/retrain/seed456=`55/10/35` 输出集成 + mean/var + **raw-alpha gate + CV-adaptive two-pass**，**73.71935**；待 seed789 完成后生成最终 200 云包。
+- 当前 local2 最好：baseline/retrain/seed456=`55/10/35` 输出集成 + mean/var + **raw-alpha gate + CV-adaptive two-pass**，**73.71935**。seed789 第四轨迹已完成，最佳四轨迹扫描只到 73.72168（+0.00233），未达到保留门槛。
 - Educoder 提交脚本已完成多次真实上传，支持结果等待、临时 502 重试和不确定回调去重。
 
 ## 当前最佳方案
@@ -147,6 +147,7 @@ unset EDUCODER_COOKIE
 | FPS 起点变化自集成 + CV two-pass | 73.64981 | -0.02231 | 95% CI 跨零，否定并删除专用实现 |
 | baseline/retrain/seed456 = 2:1:1 + clipped-alpha gate | 73.68104 | +0.00892 | 单云在 0.97 裁剪边界触发不连续，旧结果不再作为候选 |
 | **baseline/retrain/seed456 = 55/10/35 + raw-alpha gate** | **73.71935** | **+0.04723** | CD/P2S 同升；95% CI `[+0.02507,+0.07160]`，12 类 leave-one-out 全正 |
+| + seed789 第四轨迹（10%） | 73.72168 | +0.00233 | CI 为正但远低于 +0.05；不增加 A 榜候选复杂度 |
 | multi-EMA 0.99/0.995/0.999 | 72.90402～72.90787 | -0.08803～-0.09188 | 三个 decay 均否定；独立 raw 仅用于集成 |
 | Normal auxiliary | 72.99793 | -0.00249 | CD 小升、P2S 下降 |
 | SIMPC mirror consistency | 72.96870 | -0.03172 | 覆盖与表面距离 Pareto 变差 |
@@ -167,11 +168,12 @@ unset EDUCODER_COOKIE
 | 优先级 | 方向 | 当前状态 | 理由 |
 |---:|---|---|---|
 | 1 | 55/10/35 + raw-alpha gate 线上验证 | 待打包 | AID 的方差调度启发；local2 CD/P2S 同升，独立 local3 保持保护行为 |
-| 2 | seed789 第四条独立轨迹 + 深度集成 | 训练中 | seed456 证明独立误差有价值；等训练完成后只做一次统一权重判断 |
-| 3 | 曲率感知、可学习的点分布项 | 未尝试 | 手工 repulsion 能提高 CD，但必须联合守住 P2S |
-| 4 | 法向/曲率域消息传递 | 部分探索 | 纯坐标双图已否定；后续若尝试，应显式构造切平面或曲率邻接 |
-| 5 | U-CAN / Noise2Noise 一致性预训练 | 未尝试 | 可利用 noisy-only 数据扩大分布，但训练成本较高 |
-| 6 | CVM-006 线上补测 | 尝试但未提交 | 历史 local2 72.72，优先级低于当前 adaptive ZIP |
+| 2 | ROT-001 真实 sampled-point SO(3) 增强 | 四卡训练中 | 发现历史线性增强只变换 mesh、对训练点实际为空操作；先隔离旋转变量 |
+| 3 | PointNeXt-lite 层次化局部残差编码器 | 候选设计 | 普通 attention 已否定；层次化局部聚合更直接针对 CD 覆盖和 B 榜扩展性 |
+| 4 | 曲率感知、可学习的点分布项 | 未尝试 | 手工 repulsion 能提高 CD，但必须联合守住 P2S |
+| 5 | 法向/曲率域消息传递 | 部分探索 | 纯坐标双图已否定；后续若尝试，应显式构造切平面或曲率邻接 |
+| 6 | U-CAN / Noise2Noise 一致性预训练 | 未尝试 | 可利用 noisy-only 数据扩大分布，但训练成本较高 |
+| 7 | CVM-006 线上补测 | 尝试但未提交 | 历史 local2 72.72，优先级低于当前 adaptive ZIP |
 
 ## 测试
 
