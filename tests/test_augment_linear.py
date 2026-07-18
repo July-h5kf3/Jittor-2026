@@ -53,6 +53,7 @@ class AugmentLinearTests(unittest.TestCase):
             "train_spcfgfnrot001_cvm.yaml",
             "train_spcfgfnrot001.yaml",
             "predict_spcfgfnrot001a105_local2.yaml",
+            "predict_spcfgfnrot001a105_local2_pass2.yaml",
         ):
             task = OmegaConf.load(ROOT / "configs" / "task" / name)
             for kind in ("data", "transform", "system", "model"):
