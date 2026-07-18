@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 import unittest
 
 import jittor as jt
@@ -6,7 +7,7 @@ import numpy as np
 from omegaconf import OmegaConf
 
 from src.model.feature import PointNeXtLiteHierarchy
-from src.model.straightpcf import VelocityNet
+from src.model.straightpcf import StraightPCFModule, VelocityNet
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -78,6 +79,57 @@ class PointNeXtLiteTests(unittest.TestCase):
         baseline_output = baseline(points).numpy()
         pointnext_output = pointnext(points).numpy()
         np.testing.assert_array_equal(pointnext_output, baseline_output)
+
+    @unittest.skipUnless(
+        os.environ.get("PNX_CUDA_SMOKE") == "1",
+        "set PNX_CUDA_SMOKE=1 for the full per-rank CUDA training smoke",
+    )
+    def test_full_batch_cuda_forward_backward(self):
+        jt.flags.use_cuda = 1
+        batch_size = int(os.environ.get("PNX_SMOKE_BATCH", "32"))
+        point_count = int(os.environ.get("PNX_SMOKE_POINTS", "1000"))
+        model_config = OmegaConf.load(
+            ROOT / "configs" / "model" / "spcfgfnpnx001_cvm.yaml"
+        )
+        transform_config = OmegaConf.load(
+            ROOT / "configs" / "transform" / "spcf_n_rot001.yaml"
+        )
+        model = StraightPCFModule(model_config, transform_config)
+        checkpoint = (
+            ROOT / "experiments" / "_bak_official_75.01" / "cvm_checkpoint_best.pkl"
+        )
+        self.assertTrue(checkpoint.is_file())
+        model.init_from_stage(str(checkpoint))
+        model.train()
+
+        rng = np.random.RandomState(29)
+        clean = rng.randn(batch_size, point_count, 3).astype(np.float32) * 0.05
+        noisy = clean + rng.laplace(
+            0.0,
+            0.011,
+            size=clean.shape,
+        ).astype(np.float32)
+        time_step = rng.uniform(1e-8, 1.0, size=batch_size).astype(np.float32)
+        blend = time_step.reshape(batch_size, 1, 1)
+        seed = blend * clean[:, :1, :] + (1.0 - blend) * noisy[:, :1, :]
+        batch = {
+            "pcl_clean": jt.array(clean),
+            "pcl_noisy_L2": jt.array(noisy),
+            "seed_points_t": jt.array(seed),
+            "original_time_step": jt.array(time_step),
+        }
+        optimizer = jt.optim.Adam(model.parameters(), lr=3e-5)
+        loss = model.training_step(batch)["loss"]
+        optimizer.zero_grad()
+        optimizer.backward(loss)
+        optimizer.step()
+        jt.sync_all()
+        loss_value = float(loss.item())
+        print(
+            f"PNX CUDA smoke batch={batch_size} points={point_count} "
+            f"loss={loss_value:.6f}"
+        )
+        self.assertTrue(np.isfinite(loss_value))
 
 
 if __name__ == "__main__":
