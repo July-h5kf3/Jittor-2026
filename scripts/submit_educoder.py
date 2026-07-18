@@ -52,6 +52,10 @@ class SubmissionError(RuntimeError):
     pass
 
 
+class CallbackUncertain(SubmissionError):
+    """OSS upload completed, but its callback response could not be decoded."""
+
+
 def _double_b64decode(value: str) -> str:
     return base64.b64decode(base64.b64decode(value)).decode("utf-8")
 
@@ -170,7 +174,15 @@ class EducoderClient:
         self.clock_offset = self._get_clock_offset()
 
     def _get_clock_offset(self) -> float:
-        response = self.http.get(BASE_URL + "/", timeout=30)
+        # The homepage is CDN cached and its Date header can lag real time by
+        # tens of minutes.  A cache-busting query keeps signed API timestamps
+        # aligned with the origin server.
+        response = self.http.get(
+            BASE_URL + "/",
+            params={"_clock": str(uuid.uuid4())},
+            headers={"Cache-Control": "no-cache"},
+            timeout=30,
+        )
         response.raise_for_status()
         date_header = response.headers.get("Date")
         if not date_header:
@@ -373,7 +385,9 @@ def upload_archive(
     try:
         payload = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise SubmissionError("upload callback returned a non-JSON response") from exc
+        raise CallbackUncertain(
+            "upload callback returned a non-JSON response"
+        ) from exc
     if payload.get("status") != 0:
         raise SubmissionError(
             f"upload callback failed: {payload.get('message', payload)}"
@@ -389,9 +403,15 @@ def _find_new_result(
     attempts: int = 12,
 ) -> Optional[Dict[str, Any]]:
     for attempt in range(attempts):
+        try:
+            current_results = client.results(stage_id)
+        except requests.RequestException:
+            if attempt + 1 < attempts:
+                time.sleep(5)
+            continue
         matches = [
             item
-            for item in client.results(stage_id)
+            for item in current_results
             if item.get("file_name") == file_name and item.get("id") not in old_ids
         ]
         if matches:
@@ -399,6 +419,72 @@ def _find_new_result(
         if attempt + 1 < attempts:
             time.sleep(5)
     return None
+
+
+def wait_for_result(
+    client: EducoderClient,
+    stage_id: int,
+    result_id: int,
+    timeout_seconds: float,
+    poll_seconds: float,
+) -> Dict[str, Any]:
+    if timeout_seconds < 0:
+        raise SubmissionError("--wait-timeout must be non-negative")
+    if poll_seconds <= 0:
+        raise SubmissionError("--poll-seconds must be positive")
+
+    deadline = time.monotonic() + timeout_seconds
+    last_state = None
+    last_error = None
+    while True:
+        result = None
+        try:
+            results = client.results(stage_id)
+        except requests.RequestException as exc:
+            error_state = (type(exc).__name__, str(exc))
+            if error_state != last_error:
+                print(
+                    f"result {result_id}: transient API error "
+                    f"{type(exc).__name__}; retrying",
+                    flush=True,
+                )
+                last_error = error_state
+        else:
+            last_error = None
+            result = next(
+                (item for item in results if item.get("id") == result_id),
+                None,
+            )
+        if result is not None:
+            state = (
+                result.get("status"),
+                result.get("data_ranking"),
+                result.get("updated_at"),
+            )
+            if state != last_state:
+                print(
+                    f"result {result_id}: status={state[0]} "
+                    f"score={state[1]} updated_at={state[2]}",
+                    flush=True,
+                )
+                last_state = state
+            if result.get("status") == 2:
+                return result
+            if result.get("status") == 3:
+                message = result.get("err_msg") or "evaluation failed"
+                raise SubmissionError(f"result {result_id} failed: {message}")
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            if result is None:
+                raise SubmissionError(
+                    f"result {result_id} was not found before timeout"
+                )
+            raise SubmissionError(
+                f"result {result_id} did not finish within "
+                f"{timeout_seconds:g} seconds"
+            )
+        time.sleep(min(poll_seconds, remaining))
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
@@ -413,6 +499,23 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument("--max-size-gib", type=float, default=1.0)
     parser.add_argument("--part-size-mib", type=int, default=8)
     parser.add_argument("--cookie-env", default="EDUCODER_COOKIE")
+    parser.add_argument(
+        "--status-only",
+        action="store_true",
+        help="authenticate, print existing results, and exit without validating a ZIP",
+    )
+    parser.add_argument(
+        "--wait-result-id",
+        type=int,
+        help="wait for an existing result ID instead of uploading a ZIP",
+    )
+    parser.add_argument(
+        "--wait",
+        action="store_true",
+        help="after upload, wait until Educoder finishes evaluating the result",
+    )
+    parser.add_argument("--wait-timeout", type=float, default=1800.0)
+    parser.add_argument("--poll-seconds", type=float, default=15.0)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--yes", action="store_true")
     parser.add_argument("--allow-duplicate", action="store_true")
@@ -429,18 +532,6 @@ def main(argv: Optional[List[str]] = None) -> int:
             f"set {args.cookie_env} in the environment; do not save the cookie in a file"
         )
 
-    archive_path = Path(args.zip_path).expanduser().resolve()
-    archive = validate_archive(
-        archive_path,
-        args.expected_count,
-        args.expected_points,
-        args.max_size_gib,
-    )
-    print(
-        f"archive OK: {archive['file_name']} size={archive['size']} "
-        f"sha256={archive['sha256']}"
-    )
-
     client = EducoderClient(cookie, args.competition)
     user = client.user_info()
     login = user.get("login")
@@ -456,6 +547,35 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     before = client.results(args.stage_id)
     _print_results(before)
+    if args.wait_result_id is not None:
+        completed = wait_for_result(
+            client,
+            args.stage_id,
+            args.wait_result_id,
+            args.wait_timeout,
+            args.poll_seconds,
+        )
+        print(
+            f"evaluation complete: id={completed.get('id')} "
+            f"score={completed.get('data_ranking')} "
+            f"info={completed.get('err_msg')}"
+        )
+        return 0
+    if args.status_only:
+        return 0
+
+    archive_path = Path(args.zip_path).expanduser().resolve()
+    archive = validate_archive(
+        archive_path,
+        args.expected_count,
+        args.expected_points,
+        args.max_size_gib,
+    )
+    print(
+        f"archive OK: {archive['file_name']} size={archive['size']} "
+        f"sha256={archive['sha256']}"
+    )
+
     duplicates = [
         item for item in before if item.get("file_name") == archive["file_name"]
     ]
@@ -498,14 +618,28 @@ def main(argv: Optional[List[str]] = None) -> int:
         "competition_team_id": args.team_id,
     }
     old_ids = {item.get("id") for item in before}
-    response = upload_archive(
-        archive_path, token, metadata, args.part_size_mib
-    )
-    print(f"callback accepted: status={response.get('status')}")
+    callback_uncertain = False
+    try:
+        response = upload_archive(
+            archive_path, token, metadata, args.part_size_mib
+        )
+    except CallbackUncertain as exc:
+        # Educoder can create the result successfully while its OSS callback
+        # returns an HTML/empty body.  The result list is authoritative, so do
+        # not upload the same archive again before checking it.
+        callback_uncertain = True
+        print(f"callback response uncertain: {exc}; checking result list")
+    else:
+        print(f"callback accepted: status={response.get('status')}")
     created = _find_new_result(
         client, args.stage_id, archive["file_name"], old_ids
     )
     if created is None:
+        if callback_uncertain:
+            raise SubmissionError(
+                "upload completed with an uncertain callback, and no new result "
+                "was visible after 60 seconds; inspect the competition page before retrying"
+            )
         raise SubmissionError(
             "callback succeeded, but the new result was not visible after 60 seconds"
         )
@@ -513,6 +647,19 @@ def main(argv: Optional[List[str]] = None) -> int:
         f"submission created: id={created.get('id')} status={created.get('status')} "
         f"score={created.get('data_ranking')} file={created.get('file_name')}"
     )
+    if args.wait:
+        completed = wait_for_result(
+            client,
+            args.stage_id,
+            int(created["id"]),
+            args.wait_timeout,
+            args.poll_seconds,
+        )
+        print(
+            f"evaluation complete: id={completed.get('id')} "
+            f"score={completed.get('data_ranking')} "
+            f"info={completed.get('err_msg')}"
+        )
     return 0
 
 

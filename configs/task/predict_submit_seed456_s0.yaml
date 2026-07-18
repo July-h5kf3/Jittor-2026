@@ -1,0 +1,12 @@
+mode: predict
+debug: False
+load_ckpt: experiments/spcfgfncvm002seed456_spcf/checkpoint_best.pkl
+components:
+  data: predict_submit_seed456_s0
+  transform: spcf
+  system: spcfgfncvm002_spcf
+  model: spcfgfncvm002a105_spcf
+writer:
+  __target__: vm
+  save_dir: submission_results/seed456_submit
+  save_name: denoised

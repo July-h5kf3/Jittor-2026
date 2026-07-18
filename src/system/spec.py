@@ -138,6 +138,13 @@ class DummySystem():
         self.base_lr = float(getattr(self.optimizer, 'lr', 0.0)) if self.optimizer is not None else 0.0
         self.ema_decay = float(trainer_config.get('ema_decay', 0.0))  # 0 disables EMA
         self._ema = None  # lazy: dict name -> jt.Var of EMA-smoothed params
+        configured_ema_decays = trainer_config.get('ema_decays', [])
+        self.ema_decays = sorted({float(value) for value in configured_ema_decays})
+        if self.ema_decay > 0 and self.ema_decays:
+            raise ValueError("configure either ema_decay or ema_decays, not both")
+        if any(not 0.0 < value < 1.0 for value in self.ema_decays):
+            raise ValueError("every ema_decays value must be in (0, 1)")
+        self._ema_states = {}  # decay -> state dict, initialized after first step
 
         # --- Weights & Biases logging (rank0 only, opt-in via WANDB_API_KEY) ---
         # Disabled unless an API key (or offline mode) is in the env, so manual
@@ -295,6 +302,22 @@ class DummySystem():
                 if 'running_' not in k and 'num_batches' not in k]
 
     def _update_ema(self):
+        if self.ema_decays:
+            sd = self.model.state_dict()
+            keys = self._ema_keys()
+            for decay in self.ema_decays:
+                state = self._ema_states.get(decay)
+                if state is None:
+                    self._ema_states[decay] = {
+                        key: sd[key].detach().clone() for key in keys
+                    }
+                    continue
+                for key in state:
+                    state[key] = (
+                        decay * state[key]
+                        + (1.0 - decay) * sd[key].detach()
+                    ).detach()
+            return
         if self.ema_decay <= 0:
             return
         sd = self.model.state_dict()
@@ -306,6 +329,21 @@ class DummySystem():
             self._ema[k] = (d * self._ema[k] + (1.0 - d) * sd[k].detach()).detach()
 
     def _save_model(self, path: str):
+        if self.ema_decays and self._ema_states:
+            # Keep the raw checkpoint as a strict control, then materialize every
+            # EMA from the exact same training trajectory and best-epoch event.
+            self.model.save(path)
+            cur = self.model.state_dict()
+            backup = {key: cur[key].detach().clone() for key in self._ema_keys()}
+            stem, suffix = os.path.splitext(path)
+            try:
+                for decay in self.ema_decays:
+                    self.model.load_state_dict(self._ema_states[decay])
+                    tag = f"{decay:.6f}".rstrip('0').rstrip('.').replace('.', '')
+                    self.model.save(f"{stem}_ema{tag}{suffix}")
+            finally:
+                self.model.load_state_dict(backup)
+            return
         # save EMA-smoothed weights when EMA is enabled (more stable than raw)
         if self.ema_decay > 0 and self._ema is not None:
             cur = self.model.state_dict()
@@ -464,6 +502,7 @@ class DummySystem():
             'base_lr': self.base_lr,
             'lr_schedule': self.lr_schedule,
             'ema_decay': self.ema_decay,
+            'ema_decays': list(self.ema_decays),
             'loss_config': dict(self.loss_config) if self.loss_config else None,
             'world_size': self.distributed.world_size,
             'save_best_only': self.save_best_only,

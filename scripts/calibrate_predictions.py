@@ -55,7 +55,7 @@ def extract_features(
     )
 
 
-def estimate_alpha(features: np.ndarray, profile: str) -> float:
+def estimate_raw_alpha(features: np.ndarray, profile: str) -> float:
     if profile != PROFILE_NAME:
         raise CalibrationError(f"unknown profile: {profile}")
     if features.shape != PROFILE_COEFFICIENTS.shape:
@@ -63,7 +63,11 @@ def estimate_alpha(features: np.ndarray, profile: str) -> float:
             f"profile {profile} expects {len(PROFILE_COEFFICIENTS)} features, "
             f"got {len(features)}"
         )
-    value = float(PROFILE_INTERCEPT + np.dot(PROFILE_COEFFICIENTS, features))
+    return float(PROFILE_INTERCEPT + np.dot(PROFILE_COEFFICIENTS, features))
+
+
+def estimate_alpha(features: np.ndarray, profile: str) -> float:
+    value = estimate_raw_alpha(features, profile)
     return float(np.clip(value, ALPHA_MIN, ALPHA_MAX))
 
 
@@ -107,20 +111,24 @@ def calibrate_tree(
     if missing_noisy:
         raise CalibrationError(f"missing noisy cloud for {missing_noisy[0]}")
 
-    rows = ["key\talpha\tdisplacement_mean\tdisplacement_variance"]
+    rows = [
+        "key\talpha\traw_alpha\tdisplacement_mean\tdisplacement_variance"
+    ]
     try:
         for index, key in enumerate(sorted(predictions), 1):
             prediction = np.load(predictions[key], allow_pickle=False).astype(np.float64)
             noisy = np.load(noisy_clouds[key], allow_pickle=False).astype(np.float64)
             features = extract_features(noisy, prediction, key)
-            alpha = estimate_alpha(features, profile)
+            raw_alpha = estimate_raw_alpha(features, profile)
+            alpha = float(np.clip(raw_alpha, ALPHA_MIN, ALPHA_MAX))
             calibrated = calibrate_cloud(noisy, prediction, alpha, base_alpha)
             target = out_dir / key / "denoised.npy"
             target.parent.mkdir(parents=True, exist_ok=True)
             np.save(target, calibrated)
             displacement = np.linalg.norm(prediction - noisy, axis=1)
             rows.append(
-                f"{key}\t{alpha:.8f}\t{displacement.mean():.10g}\t"
+                f"{key}\t{alpha:.8f}\t{raw_alpha:.8f}\t"
+                f"{displacement.mean():.10g}\t"
                 f"{displacement.var():.10g}"
             )
             if index % 25 == 0 or index == len(predictions):

@@ -1,0 +1,23 @@
+mode: train
+debug: False
+init_stage_ckpt: experiments/spcfgfncvm002_cvm/checkpoint_best.pkl
+components:
+  data: spcf_train_pd002
+  transform: spcf_n
+  system: spcfgfncvm002seed456_spcf
+  model: spcfgfncvm002_spcf
+loss:
+  loss: 1.0
+optimizer:
+  __target__: adam
+  lr: 0.0001
+trainer:
+  epochs: 80
+  lr_schedule: cosine
+  save_best_only: True
+  early_stopping:
+    enabled: True
+    monitor: val/loss_sum
+    mode: min
+    patience: 30
+    min_delta: 0.0000005

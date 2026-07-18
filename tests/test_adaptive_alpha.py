@@ -26,8 +26,21 @@ class AdaptiveAlphaTests(unittest.TestCase):
             noisy, prediction, "category/model"
         )
         alpha = calibrate_predictions.estimate_alpha(features, "mean-var")
+        raw_alpha = calibrate_predictions.estimate_raw_alpha(
+            features, "mean-var"
+        )
         self.assertGreaterEqual(alpha, calibrate_predictions.ALPHA_MIN)
         self.assertLessEqual(alpha, calibrate_predictions.ALPHA_MAX)
+        self.assertAlmostEqual(
+            alpha,
+            float(
+                np.clip(
+                    raw_alpha,
+                    calibrate_predictions.ALPHA_MIN,
+                    calibrate_predictions.ALPHA_MAX,
+                )
+            ),
+        )
         output = calibrate_predictions.calibrate_cloud(noisy, prediction, alpha)
         np.testing.assert_allclose(
             output, prediction * (alpha / calibrate_predictions.BASE_ALPHA)
@@ -54,7 +67,9 @@ class AdaptiveAlphaTests(unittest.TestCase):
             result = np.load(out / key / "denoised.npy")
             self.assertEqual(result.shape, (8, 3))
             self.assertTrue(manifest.is_file())
-            self.assertIn("category/model", manifest.read_text(encoding="utf-8"))
+            manifest_text = manifest.read_text(encoding="utf-8")
+            self.assertIn("raw_alpha", manifest_text.splitlines()[0])
+            self.assertIn("category/model", manifest_text)
 
 
 if __name__ == "__main__":

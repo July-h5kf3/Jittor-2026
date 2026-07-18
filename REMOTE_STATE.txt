@@ -1,0 +1,88 @@
+captured_at=2026-07-18T19:20:07+08:00
+hostname=container-01e947a701-9d6cb1a9
+branch=LDC
+head=c3fe40f556659338afc11da115ed9d3a88898411
+local_reference=b07e4ef94653c60d1a70a8b1bf4aab7517387724
+merge_base=1c351767feaf8c2a90069a012ec8c957caefc228
+--- git status ---
+ M EXPERIMENTS.md
+ M README.md
+ M scripts/calibrate_predictions.py
+ M scripts/submit_educoder.py
+ M src/system/spec.py
+ M tests/test_adaptive_alpha.py
+ M tests/test_submit_educoder.py
+?? configs/data/predict_local2_pass2.yaml
+?? configs/data/predict_local3.yaml
+?? configs/data/predict_local3_pass2.yaml
+?? configs/data/predict_submit_a105_pass2_s0.yaml
+?? configs/data/predict_submit_a105_pass2_s1.yaml
+?? configs/data/predict_submit_a105_pass2_s2.yaml
+?? configs/data/predict_submit_a105_pass2_s3.yaml
+?? configs/data/predict_submit_ema_raw_s0.yaml
+?? configs/data/predict_submit_ema_raw_s1.yaml
+?? configs/data/predict_submit_ema_raw_s2.yaml
+?? configs/data/predict_submit_ema_raw_s3.yaml
+?? configs/data/predict_submit_seed456_s0.yaml
+?? configs/data/predict_submit_seed456_s1.yaml
+?? configs/data/predict_submit_seed456_s2.yaml
+?? configs/data/predict_submit_seed456_s3.yaml
+?? configs/system/spcfgfncvm002ema_spcf.yaml
+?? configs/system/spcfgfncvm002seed456_spcf.yaml
+?? configs/system/spcfgfncvm002seed789_spcf.yaml
+?? configs/task/predict_spcfgfncvm002a105_local2_pass2.yaml
+?? configs/task/predict_spcfgfncvm002a105_local3.yaml
+?? configs/task/predict_spcfgfncvm002a105_local3_pass2.yaml
+?? configs/task/predict_spcfgfncvm002ema0995_local2.yaml
+?? configs/task/predict_spcfgfncvm002ema0999_local2.yaml
+?? configs/task/predict_spcfgfncvm002ema099_local2.yaml
+?? configs/task/predict_spcfgfncvm002ema_raw_local2.yaml
+?? configs/task/predict_spcfgfncvm002seed456_local2.yaml
+?? configs/task/predict_spcfgfncvm002seed456_submit.yaml
+?? configs/task/predict_spcfgfncvm002seed456swa_local2.yaml
+?? configs/task/predict_spcfgfncvm002seed789_local2.yaml
+?? configs/task/predict_submit_a105_pass2_s0.yaml
+?? configs/task/predict_submit_a105_pass2_s1.yaml
+?? configs/task/predict_submit_a105_pass2_s2.yaml
+?? configs/task/predict_submit_a105_pass2_s3.yaml
+?? configs/task/predict_submit_ema_raw_s0.yaml
+?? configs/task/predict_submit_ema_raw_s1.yaml
+?? configs/task/predict_submit_ema_raw_s2.yaml
+?? configs/task/predict_submit_ema_raw_s3.yaml
+?? configs/task/predict_submit_seed456_s0.yaml
+?? configs/task/predict_submit_seed456_s1.yaml
+?? configs/task/predict_submit_seed456_s2.yaml
+?? configs/task/predict_submit_seed456_s3.yaml
+?? configs/task/train_spcfgfncvm002ema.yaml
+?? configs/task/train_spcfgfncvm002seed456.yaml
+?? configs/task/train_spcfgfncvm002seed789.yaml
+?? localtest3/
+?? scripts/average_checkpoints.py
+?? scripts/calibrate_adaptive_two_pass.py
+?? scripts/calibrate_two_pass.py
+?? scripts/calibrate_uncertainty.py
+?? scripts/compare_predictions.py
+?? scripts/ensemble_predictions.py
+?? scripts/run_ema_local2.sh
+?? tests/test_adaptive_two_pass.py
+?? tests/test_average_checkpoints.py
+?? tests/test_compare_predictions.py
+?? tests/test_ensemble_predictions.py
+?? tests/test_multi_ema.py
+?? tests/test_two_pass.py
+?? tests/test_uncertainty_calibration.py
+--- checkpoint sha256 ---
+e92a57fb1e63d274da924dd665619527bc57ddef08a723b782961418120ab75d  experiments/_bak_official_75.01/cvm_checkpoint_best.pkl
+d3c24cfde8127b22bf5134e5cf58883f6fe1735f051a27ab87e9b037378730a4  experiments/spcfgfncvm002_cvm/checkpoint_best.pkl
+e5f8967724d8eb711afacdc894556c2938340683ffd11f7ba520a68b9165eb2c  experiments/spcfgfncvm002_spcf/checkpoint_best.pkl
+5c7f39832953eb1af7ea30671cfad92d1d5715fad0f29c13534be9b770e3e76b  experiments/spcfgfncvm002ema_spcf/checkpoint_best.pkl
+fc7f880ab588f55390f73dc56ea47d77eac6bd9f541b0f0080641b5b98fb8f7c  experiments/spcfgfncvm002ema_spcf/checkpoint_best_ema099.pkl
+37e9c1a348dfcfcc444415f8118e852fb01cfcd70c9003337e5f648eac0d9430  experiments/spcfgfncvm002ema_spcf/checkpoint_best_ema0995.pkl
+81d7a53c437bf9ca1b155cb0c6c103370b966a327199ce77a825fa41d52b1dc8  experiments/spcfgfncvm002ema_spcf/checkpoint_best_ema0999.pkl
+ec5ebd8af467310dd13bde14793c9f5d60d06c90c6942a8305d9ccdbb70c8236  experiments/spcfgfncvm002seed456_spcf/checkpoint_best.pkl
+ec5ebd8af467310dd13bde14793c9f5d60d06c90c6942a8305d9ccdbb70c8236  experiments/spcfgfncvm002seed456_spcf/snapshots/checkpoint_best_1784005278.pkl
+234f61d80bd14365178d5dbc3ac5e29cfa87946e5e897562440ef8f66a5ef408  experiments/spcfgfncvm002seed789_spcf/checkpoint_best.pkl
+--- selected zip sha256 ---
+e8bce43d21a458ab16b621713f96a141b2cbbc6364c8671a84858f2b1f25fad6  submission_results/result_baseline_retrain_ensemble_adaptive.zip
+4c8a40ec7f4ded519037a1cc052ce4c4d6a337e8a29fdc0e735fdd9001fadd69  submission_results/result_baseline_retrain_ensemble_twopass.zip
+8b171a4e92a18a1360d10b86783c02c302bf01235e5919ad9a0809a3e719c272  submission_results/result_baseline075_retrain025_cv_twopass_g050.zip

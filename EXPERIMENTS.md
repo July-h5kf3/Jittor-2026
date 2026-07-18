@@ -20,9 +20,47 @@
 | MS-A106 | 72.15 | 75.47 | 63.95 | 86.98 | 多尺度 distance，P2S 较强 |
 | CVM-001 | 72.54 | 74.90 | 63.59 | 86.20 | stage target 单独使用不稳定 |
 | CVM-002（alpha=1.0） | 72.77 | 75.51 | 64.15 | 86.88 | stage target + deep supervision 有效 |
-| **CVM-002 A105** | **72.82** | **76.03** | **64.57** | **87.49** | **当前线上最佳；相同权重只把推理 alpha 调到 1.05** |
+| **CVM-002 A105** | **72.82** | **76.03** | **64.57** | **87.49** | **前一线上最佳；相同权重只把推理 alpha 调到 1.05** |
+| **1:1 baseline/retrain ensemble + mean/var** | **73.03443** | **76.04** | **64.60** | **87.47** | **submission 39221；本地收益在线上缩小，但确认超过 76.03** |
 
-## 当前最佳离线候选：按云 mean/var 校准
+## 2026-07-14：EMA、独立轨迹集成与 two-pass
+
+同一训练轨迹同时保存 raw、EMA 0.99、0.995、0.999。best validation 位于 epoch 26，`val/loss_sum=4.169385`，epoch 56 在连续 30 个 epoch 无提升后停止。
+
+| 方法 | local2 总分 | 相对 mean/var baseline | 95% CI | 结论 |
+|---|---:|---:|---:|---|
+| mean/var baseline | 72.99591 | - | - | 严格 reference |
+| retrain raw + mean/var | 72.96777 | -0.02814 | `[-0.05237,-0.00542]` | 单模型否定，但误差可用于集成 |
+| EMA 0.99 + mean/var | 72.90664 | -0.08927 | `[-0.15262,-0.02370]` | 否定 |
+| EMA 0.995 + mean/var | 72.90787 | -0.08803 | `[-0.15131,-0.02802]` | 否定 |
+| EMA 0.999 + mean/var | 72.90402 | -0.09188 | `[-0.15955,-0.02297]` | 否定 |
+| baseline/retrain 1:1 ensemble + mean/var | 73.03443 | +0.03852 | `[+0.02113,+0.05618]` | 线上 76.04，保留 |
+| 1:1 ensemble + baseline two-pass residual | 73.57402 | 相对原 two-pass +0.01130 | `[+0.00189,+0.02124]` | submission 39222 待计算 |
+| 75/25 ensemble + fixed two-pass | 73.58214 | 相对 1:1 combo +0.00811 | `[+0.00282,+0.01326]` | 包已生成；submission 39225 因每日上限被拒 |
+| 75/25 ensemble + conservative beta schedule | **73.62371** | 相对 fixed +0.04157 | `[-0.00400,+0.09171]` | 上一 local2 最好；已被 CV 调度超过 |
+| 75/25 ensemble + CV-adaptive beta schedule | **73.67212** | 相对 conservative +0.04841 | `[+0.01172,+0.08920]` | CD/P2S 同升；上一版 200 云候选包已校验 |
+| 55/10/35 baseline/retrain/seed456 + raw-alpha gate + CV two-pass | **73.71935** | 相对 75/25 CV +0.04723 | `[+0.02507,+0.07160]` | 当前 local2 最好；CD/P2S 同升，待生成 200 云包 |
+
+补充否定结论：逐点 checkpoint disagreement 校准为 72.66690（-0.32900）；高残差云增加 beta 的 adaptive schedule 为 73.51723（-0.06491）。local3 的 40 云全部命中 alpha 下界 gate，固定与 conservative beta 都使用 `-0.30`，因此该集合对 regular-beta 调度无区分力。
+
+CV-adaptive 调度来自 AID（arXiv:2509.14560）“用预测 score 模长方差估计噪声并安排迭代步长”的思想。这里不引入新模型，只用第二次修正模长的变异系数 `CV=std/mean` 做鲁棒标准化，再令 `beta=clip(0.45*(1+0.50*z), 0.30, 0.60)`；该阶段仍沿用 clipped-alpha 下界 gate，后续三轨迹扫描才升级为 raw-alpha gate。历史完整 beta 网格的五折回放相对 fixed 为 +0.12966，五折选择的 gamma 均为正（0.425～0.600）；在当前 75/25 锚点上的严格实测增益为 +0.04841。按类别 leave-one-out 时 12 个留出结果仍全部为正（+0.03782～+0.05894），因此收益不是由单个类别驱动。
+
+- 提交包：`submission_results/result_baseline075_retrain025_cv_twopass_g050.zip`
+- SHA256：`8b171a4e92a18a1360d10b86783c02c302bf01235e5919ad9a0809a3e719c272`
+
+75/25 baseline/retrain 权重空间 model soup 被否定：soup adaptive / fixed two-pass / conservative two-pass 分别为 72.78194 / 73.37710 / 73.39222，相对当时 73.62371 reference 为 -0.84177 / -0.24661 / -0.23148，三个配对区间均全负。说明两个独立轨迹虽可在输出空间降低误差，参数线性插值会破坏已训练好的 surface-distance 几何。
+
+Sampling Variation（arXiv:2411.01116）启发的 FPS 起点变化自集成也被否定：第二个 FPS 起点单独做 adaptive / fixed / CV two-pass 分别为 73.14340 / 73.51155 / 73.60107；再与原始 FPS 的 baseline/retrain 集成结果平均后做 CV two-pass 为 73.64981，仍比 73.67212 reference 低 0.02231，95% CI `[-0.08424,+0.01549]`。因此不提交、不保留专用推理接口和重预测目录，只保留 `experiments/sampling_variation/local2_comparison.tsv` 作为否定证据。
+
+seed456 独立轨迹的单模型 adaptive 为 72.89614。直接使用 clipped-alpha gate 时，baseline/retrain/seed456 的初步 2:1:1 集成为 73.68104，仅比 73.67212 高 0.00892，且 CI 跨零。进一步检查发现，seed456 权重达到 10% 后有一云的裁剪前 alpha 仅从 0.97004 降到 0.96981，却因 `alpha==0.97` 使 beta 从正向 CV 调度瞬间切为 -0.30，该云单独损失 1.85 分。这是裁剪边界造成的推理不连续，不是模型集成本身退化。
+
+校准 manifest 现同时保存 clipped alpha 与 `raw_alpha`，保护 gate 改为 `raw_alpha<=0.96`。阈值存在明确的独立分布间隔：最终 local2 候选的最低 raw alpha 为 0.96881，local3 的 40 云最高仅 0.94972；因此阈值在 `(0.94972,0.96881)` 内移动时两套结果均逐文件不变，0.96 不是单点调参。local3 上完全取消 gate 会从 69.89368 降到 66.58939（-3.30429），而 raw-alpha gate 与旧保护输出逐文件一致、分数完全相同；因此它只修复边界误判，不移除低质量云保护。
+
+固定 raw-alpha gate 与 CV gamma=0.50 后，seed456 权重从 5% 增到 35% 时收益平滑上升，并在 35%～45% 形成平台；最终选择 baseline/retrain/seed456=`55/10/35`，而不是数值只高 0.00082 的 `50/10/40`，因为前者 CD/P2S 同升且高权重端 P2S 回撤更小。最终 local2 为 CD/P2S/总分 `57.26900 / 90.16970 / 73.71935`，相对 73.67212 为 +0.04723，95% CI `[+0.02507,+0.07160]`；44/62 云提高，12 个类别 leave-one-out 增益全部为正（+0.04124～+0.05367）。
+
+Educoder 当日有效额度为团队每天两次：`39221` 已完成，`39222` 待计算；第三次 `39225` 返回“今日已达提交上限 2 次”。
+
+## 历史校准基线：按云 mean/var 校准
 
 固定 alpha 对不同噪声强度并非都最优。最终校准器只读取 noisy 和模型预测，使用：
 
@@ -41,7 +79,7 @@ Ridge 输出每云 alpha，并裁剪到 `[0.97, 1.10]`。它不读取 clean 或 
 
 - ZIP：`submission_results/result_cvm002a105_adaptive_meanvar_a110.zip`
 - SHA256：`073f4b23bed59ce5dc237a6a2e4aaba7d17e13f4b2e68843532ca98e71c30564`
-- 状态：离线候选，尚未向 Educoder 实际上传。
+- 状态：保留为 ensemble/two-pass 的校准 anchor；不再作为最终单独提交候选。
 
 ## 2026-07-13～14 严格训练消融
 

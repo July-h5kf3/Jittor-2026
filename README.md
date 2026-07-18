@@ -4,9 +4,9 @@
 
 截至 2026-07-14：
 
-- 线上最佳：**76.03**，CVM-002 A105，CD/P2S = **64.57 / 87.49**。
-- 最佳离线提交候选：CVM-002 A105 + **按云 mean/var 自适应位移校准**。
-- Educoder 提交脚本已经完成真实 API dry-run；尚未执行上传。
+- 线上最佳：**76.04**，CVM-002 A105 与独立重训模型 1:1 输出集成，再做 mean/var 校准；CD/P2S = **64.60 / 87.47**（submission `39221`）。
+- 当前 local2 最好：baseline/retrain/seed456=`55/10/35` 输出集成 + mean/var + **raw-alpha gate + CV-adaptive two-pass**，**73.71935**；待 seed789 完成后生成最终 200 云包。
+- Educoder 提交脚本已完成多次真实上传，支持结果等待、临时 502 重试和不确定回调去重。
 
 ## 当前最佳方案
 
@@ -20,6 +20,8 @@
 | 训练噪声 | sigma=`0.008～0.014`，含 2% 三倍 Laplace outlier | 比简单扩大模型更有效 |
 | 基础推理 | 单次，`predict_alpha=1.05`，无 TTA/融合 | 对应线上 76.03 |
 | 最佳离线后处理 | 每云 mean/var Ridge，alpha 裁剪到 `[0.97,1.10]` | 不读取 clean/mesh；独立集 CD/P2S 同升 |
+| 线上确认集成 | 原最佳与独立重训 raw 预测 1:1 平均，再做 mean/var | 线上 76.04；CD 提升 0.03，P2S 下降 0.02 |
+| 待线上验证 | 55/10/35 三轨迹集成 + raw-alpha gate + CV-adaptive two-pass | 用第二次修正模长的 `std/mean` 调 beta；local2 73.71935，CD/P2S 同升 |
 
 核心配置：
 
@@ -29,6 +31,9 @@
 - `configs/model/spcfgfncvm002_{cvm,spcf}.yaml`
 - `configs/model/spcfgfncvm002a105_spcf.yaml`
 - `scripts/calibrate_predictions.py`
+- `scripts/ensemble_predictions.py`
+- `scripts/calibrate_two_pass.py`
+- `scripts/submit_educoder.py`
 
 ## 服务器保留产物
 
@@ -39,9 +44,11 @@
 | 官方 75.01 初始化权重 | `experiments/_bak_official_75.01/cvm_checkpoint_best.pkl` |
 | CVM-002 最佳 CVM 权重 | `experiments/spcfgfncvm002_cvm/checkpoint_best.pkl` |
 | CVM-002 最佳完整权重 | `experiments/spcfgfncvm002_spcf/checkpoint_best.pkl` |
-| 最佳离线提交包 | `submission_results/result_cvm002a105_adaptive_meanvar_a110.zip` |
-| 最终每云 alpha 清单 | `submission_results/cvm002a105_adaptive_meanvar_a110.tsv` |
-| 提交包 SHA256 | `073f4b23bed59ce5dc237a6a2e4aaba7d17e13f4b2e68843532ca98e71c30564` |
+| 独立重训 raw 权重 | `experiments/spcfgfncvm002ema_spcf/checkpoint_best.pkl` |
+| 线上 76.04 提交包 | `submission_results/result_baseline_retrain_ensemble_adaptive.zip` |
+| 线上 76.04 提交包 SHA256 | `e8bce43d21a458ab16b621713f96a141b2cbbc6364c8671a84858f2b1f25fad6` |
+| 上一版候选 | `submission_results/result_baseline075_retrain025_cv_twopass_g050.zip` |
+| 上一版候选 SHA256 | `8b171a4e92a18a1360d10b86783c02c302bf01235e5919ad9a0809a3e719c272` |
 
 ## 环境与运行
 
@@ -92,7 +99,7 @@ bash scripts/package_submission.sh
 | local2 五折留出 | 72.87189 | 72.99553 | **+0.12364** |
 | 独立 20 云 | 77.35058 | 77.76446 | **+0.41388** |
 
-独立 20 云上 CD 与 P2S 同时提高。当前 ZIP 仍是离线候选，平台确认前线上最好仍记为 76.03。
+独立 20 云上 CD 与 P2S 同时提高。该结果用于建立 mean/var 校准基线；当前已确认的线上最好为 baseline/retrain 1:1 输出集成 + mean/var，成绩 76.04（submission 39221）。
 
 ## Educoder 提交脚本
 
@@ -124,7 +131,7 @@ PYTHONPATH="$SUBMIT_DEPS" python scripts/submit_educoder.py --yes
 unset EDUCODER_COOKIE
 ```
 
-当前没有执行真实上传。
+已完成真实上传。当前关键记录：`39221=76.04`；`39222` 长时间停留待计算；`39225` 因团队每日两次提交上限被平台拒绝。不要重复上传仍处于 `status=0` 的记录。
 
 ## 关键实验汇总
 
@@ -132,7 +139,15 @@ unset EDUCODER_COOKIE
 
 | 方法 | adaptive 总分 | 相对 control | 结论 |
 |---|---:|---:|---|
-| **mean/var 自适应校准** | **73.00042** | OOF **+0.12364** | 当前最佳离线改进 |
+| **mean/var 自适应校准** | **73.00042** | OOF **+0.12364** | 当前 ensemble/two-pass 的基础校准 anchor |
+| **1:1 独立轨迹输出集成 + mean/var** | **73.03443** | +0.03852 | 线上 76.04，已确认微小提升 |
+| **75/25 集成 + fixed two-pass** | **73.58214** | 相对 1:1 two-pass +0.00811 | 200 云包已生成；今日额度已满 |
+| **75/25 集成 + conservative two-pass** | **73.62371** | 相对 fixed +0.04157 | 上一 local2 最好；已被 CV 调度稳定超过 |
+| **75/25 集成 + CV-adaptive two-pass** | **73.67212** | 相对 conservative +0.04841 | CD/P2S 同升；95% CI `[+0.01172,+0.08920]`，上一版已校验候选 |
+| FPS 起点变化自集成 + CV two-pass | 73.64981 | -0.02231 | 95% CI 跨零，否定并删除专用实现 |
+| baseline/retrain/seed456 = 2:1:1 + clipped-alpha gate | 73.68104 | +0.00892 | 单云在 0.97 裁剪边界触发不连续，旧结果不再作为候选 |
+| **baseline/retrain/seed456 = 55/10/35 + raw-alpha gate** | **73.71935** | **+0.04723** | CD/P2S 同升；95% CI `[+0.02507,+0.07160]`，12 类 leave-one-out 全正 |
+| multi-EMA 0.99/0.995/0.999 | 72.90402～72.90787 | -0.08803～-0.09188 | 三个 decay 均否定；独立 raw 仅用于集成 |
 | Normal auxiliary | 72.99793 | -0.00249 | CD 小升、P2S 下降 |
 | SIMPC mirror consistency | 72.96870 | -0.03172 | 覆盖与表面距离 Pareto 变差 |
 | HybridPF short residual | 72.93875 | -0.06167 | CD/P2S 均下降 |
@@ -151,11 +166,12 @@ unset EDUCODER_COOKIE
 
 | 优先级 | 方向 | 当前状态 | 理由 |
 |---:|---|---|---|
-| 1 | 不确定性驱动的每云/每 patch 步长 | 未尝试 | mean/var 是目前唯一跨口径稳定迁移的增益，可进一步学习置信度 |
-| 2 | 曲率感知、可学习的点分布项 | 未尝试 | 手工 repulsion 能提高 CD，但必须联合守住 P2S |
-| 3 | 法向/曲率域消息传递 | 部分探索 | 纯坐标双图已否定；后续若尝试，应显式构造切平面或曲率邻接 |
-| 4 | U-CAN / Noise2Noise 一致性预训练 | 未尝试 | 可利用 noisy-only 数据扩大分布，但训练成本较高 |
-| 5 | CVM-006 线上补测 | 尝试但未提交 | 历史 local2 72.72，优先级低于当前 adaptive ZIP |
+| 1 | 55/10/35 + raw-alpha gate 线上验证 | 待打包 | AID 的方差调度启发；local2 CD/P2S 同升，独立 local3 保持保护行为 |
+| 2 | seed789 第四条独立轨迹 + 深度集成 | 训练中 | seed456 证明独立误差有价值；等训练完成后只做一次统一权重判断 |
+| 3 | 曲率感知、可学习的点分布项 | 未尝试 | 手工 repulsion 能提高 CD，但必须联合守住 P2S |
+| 4 | 法向/曲率域消息传递 | 部分探索 | 纯坐标双图已否定；后续若尝试，应显式构造切平面或曲率邻接 |
+| 5 | U-CAN / Noise2Noise 一致性预训练 | 未尝试 | 可利用 noisy-only 数据扩大分布，但训练成本较高 |
+| 6 | CVM-006 线上补测 | 尝试但未提交 | 历史 local2 72.72，优先级低于当前 adaptive ZIP |
 
 ## 测试
 
@@ -180,6 +196,10 @@ git diff --check
 - Li et al., **Learning Normals of Noisy Points by Local Gradient-Aware Surface Filtering**. [arXiv:2507.03394](https://arxiv.org/abs/2507.03394)
 - Xu et al., **Gradient-based Point Cloud Denoising with Uniformity**. [arXiv:2207.10279](https://arxiv.org/abs/2207.10279)
 - Na et al., **A Lennard-Jones Layer for Distribution Normalization**. [arXiv:2402.03287](https://arxiv.org/abs/2402.03287)
+- Koo et al., **P2P-Bridge: Diffusion Bridges for 3D Point Cloud Denoising**. [arXiv:2408.16325](https://arxiv.org/abs/2408.16325)
+- **Point Cloud Resampling with Learnable Heat Diffusion**. [arXiv:2411.14120](https://arxiv.org/abs/2411.14120)
+- Izmailov et al., **Averaging Weights Leads to Wider Optima and Better Generalization**. [arXiv:1803.05407](https://arxiv.org/abs/1803.05407)
+- Bahri et al., **Test-Time Adaptation in Point Clouds: Leveraging Sampling Variation with Weight Averaging**. [arXiv:2411.01116](https://arxiv.org/abs/2411.01116)
 - **GD-GCN: Geometry-Driven Graph Convolutional Network for Point Cloud Denoising**. [arXiv:2411.14158](https://arxiv.org/abs/2411.14158)
 - **UGD: Unsupervised Point Cloud Denoising via a Learned Pristine Geometry Prior**. [arXiv:2604.16976](https://arxiv.org/abs/2604.16976)
 - **PQDT: Pseudo-Query Dual Transformer for Point Cloud Denoising**. [arXiv:2605.25127](https://arxiv.org/abs/2605.25127)
