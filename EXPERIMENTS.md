@@ -10,12 +10,23 @@
 - 已观察到本地与线上幅度不一致；local2 小差距只能用于排除，最终仍以线上反馈为准。
 - patch 推理的随机状态会随样本顺序推进；严格对照必须使用同一 canonical 列表顺序，不能拼接倒序或分片推理结果。
 
-## 2026-07-18：ROT-001（进行中）
+## 2026-07-18～19：ROT-001（完成，保留为候选轨迹）
 
 - 假设：`AugmentLinear` 只更新 mesh 顶点，未更新已经采样出的 clean/noisy 点，因此历史配置中的旋转与缩放实际为空操作。EdgeConv 不是旋转等变网络；让 paired clean/noisy 点真正接受随机旋转，可能改善跨方向的表面覆盖和 CD，同时保持 P2S。
 - 唯一变量：修复 `Asset.transform()` 的采样点语义，并在独立配置中只启用 `rotate_p=0.5`；`scale_p=0.0`，噪声、模型、优化器、四卡 batch 与 seed 均保持 CVM-002 配方。
 - 训练链：`train_spcfgfnrot001_cvm.yaml` -> `train_spcfgfnrot001.yaml`，正式训练固定 `GPU_LIST=0,1,2,3 NP=4 --seed 123`。
-- 判定：完成 canonical local2 raw/mean-var/two-pass 全口径评测，并报告配对 CI、分类别与 leave-one-category-out；普通保留门槛仍为 `+0.05`。
+- 训练结果：CVM 最优 epoch 22，`val/loss_sum=2.133761`；SPCF 最优 epoch 83，`val/loss_sum=4.084705`，训练在 epoch 113 按 30 epoch 无提升停止。SPCF checkpoint SHA256 为 `60bc3e8a73c866c06950461db43dbae64ab54887ed67796b190f6ff23a64b82a`；峰值显存 GPU0/1/2/3 为约 `7605/6453/6337/6337 MiB`。
+- 推理验证：固定 seed 123、`localtest2/local2.txt` canonical 顺序；raw 与 pass2 均生成 62/62 个 `(50000, 3)`、`float32`、有限数组，点数与 noisy 输入逐云一致。raw 推理约 28 分 53 秒，pass2 约 27 分 41 秒。
+- local2 结果（同一 `baseline_adaptive` reference）：
+
+  | 输出 | CD | P2S | 总分 | 相对 reference |
+  |---|---:|---:|---:|---:|
+  | ROT raw | 56.86644119 | 88.59776568 | 72.73210344 | -0.26380475 |
+  | ROT mean/var | 57.11178932 | 88.70349807 | 72.90764369 | -0.08826450 |
+  | ROT CV two-pass | **57.30330576** | **90.20316221** | **73.75323399** | **+0.75732580** |
+
+- 两遍融合相对 reference 的 paired bootstrap 95% CI 为 `[+0.42636114,+1.08752123]`；相对当前 seed456 `55/10/35` CV two-pass（73.71934868）高 `+0.03388531`。提高云数 `49/62`，12 个类别 leave-one-category-out 总分范围 `[+0.39418172,+0.85561842]`；最大类别 `04379243` 留出后仍为 `+0.39418172`。CD 单独增益 CI 跨零（`[-0.20079385,+0.45553536]`），总分提升主要由 P2S `+1.38018658` 驱动，因此不宣称已解决 CD 瓶颈。
+- 决定：保留 ROT checkpoint、canonical raw/adaptive/two-pass 作为 A 榜候选和后续组合素材；不单独生成或提交线上 ZIP。由于相对当前最佳组合的增益仅 `+0.03389`，低于普通增量 `+0.05` 门槛，下一轮转向零初始化的 COND-001，避免在 local2 上继续调 ROT 后处理。
 
 ## 2026-07-18：seed789 第四轨迹（否定）
 

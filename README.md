@@ -168,9 +168,9 @@ unset EDUCODER_COOKIE
 | 优先级 | 方向 | 当前状态 | 理由 |
 |---:|---|---|---|
 | 1 | 55/10/35 + raw-alpha gate 线上验证 | 待打包 | AID 的方差调度启发；local2 CD/P2S 同升，独立 local3 保持保护行为 |
-| 2 | ROT-001 真实 sampled-point SO(3) 增强 | 四卡训练中 | 发现历史线性增强只变换 mesh、对训练点实际为空操作；先隔离旋转变量 |
+| 2 | ROT-001 真实 sampled-point SO(3) 增强 | 四卡完成；local2 CV two-pass `73.75323` | raw 单模型下降，但两遍融合相对 reference `+0.75733`；相对 seed456 候选 `+0.03389`，保留轨迹不单独提交 |
 | 3 | PNX-001 PointNeXt-lite 层次化局部残差编码器 | CUDA smoke 通过 | per-rank batch=8 allocator 5.98 GiB（control 5.61）；零初始化保持初始预测一致 |
-| 4 | COND-001 remaining-time/stage FiLM | CPU smoke 通过、排队 | 旧 CVM-009/010 仅因 NCCL 失败；零初始化条件支路值得重新实测 |
+| 4 | COND-001 remaining-time/stage FiLM | CPU smoke 通过；下一轮正式训练 | 旧 CVM-009/010 仅因 NCCL 失败；零初始化条件支路值得重新实测 |
 | 5 | 曲率感知、可学习的点分布项 | 未尝试 | 手工 repulsion 能提高 CD，但必须联合守住 P2S |
 | 6 | 法向/曲率域消息传递 | 部分探索 | 纯坐标双图已否定；后续若尝试，应显式构造切平面或曲率邻接 |
 | 7 | U-CAN / Noise2Noise 一致性预训练 | 未尝试 | 可利用 noisy-only 数据扩大分布，但训练成本较高 |
