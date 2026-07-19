@@ -1,0 +1,12 @@
+mode: predict
+debug: False
+load_ckpt: experiments/spcfgfnrot001_spcf/checkpoint_best.pkl
+components:
+  data: predict_rot001_submit_pass2
+  transform: spcf
+  system: spcfgfnrot001_spcf
+  model: spcfgfncvm002a105_spcf
+writer:
+  __target__: vm
+  save_dir: submission_results/rot001_a105_pass2_20260719
+  save_name: denoised
