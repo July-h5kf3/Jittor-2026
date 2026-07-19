@@ -4,6 +4,7 @@
 
 截至 2026-07-19：
 
+- 当前研究目标：在只使用官方数据并保持 Jittor 可复现的前提下，从 **77.87** 继续推进到 **85+**。
 - 线上最佳：**77.87**，ROT-001 单 checkpoint + mean/var + **CV-adaptive two-pass**；CD/P2S = **65.91 / 89.83**，相对上一最佳 76.04 提升 **+1.83**（request_id `2026071921373714762837`）。
 - 上一线上最佳：**76.04**，CVM-002 A105 与独立重训模型 1:1 输出集成，再做 mean/var 校准；CD/P2S = **64.60 / 87.47**（submission `39221`）。
 - 当前 local2 最好：ROT-001 + mean/var + **CV-adaptive two-pass**，**73.75323**；只比未提交的 baseline/retrain/seed456=`55/10/35` 候选 73.71935 高 0.03389，但线上取得了显著增益。
@@ -103,7 +104,7 @@ bash scripts/package_submission.sh
 | local2 五折留出 | 72.87189 | 72.99553 | **+0.12364** |
 | 独立 20 云 | 77.35058 | 77.76446 | **+0.41388** |
 
-独立 20 云上 CD 与 P2S 同时提高。该结果用于建立 mean/var 校准基线；当前已确认的线上最好为 baseline/retrain 1:1 输出集成 + mean/var，成绩 76.04（submission 39221）。
+独立 20 云上 CD 与 P2S 同时提高。该结果用于建立 mean/var 校准基线；它曾支撑 baseline/retrain 1:1 输出集成取得 76.04，当前线上最好已更新为 ROT-001 CV-adaptive two-pass 的 77.87。
 
 ## Educoder 提交脚本
 
@@ -135,7 +136,7 @@ PYTHONPATH="$SUBMIT_DEPS" python scripts/submit_educoder.py --yes
 unset EDUCODER_COOKIE
 ```
 
-已完成真实上传。当前关键记录：`39221=76.04`；`39222` 长时间停留待计算；`39225` 因团队每日两次提交上限被平台拒绝。不要重复上传仍处于 `status=0` 的记录。
+已完成真实上传。当前关键记录：`39221=76.04`；ROT-001 request_id `2026071921373714762837=77.87`；`39222` 长时间停留待计算；`39225` 因团队每日两次提交上限被平台拒绝。不要重复上传仍处于 `status=0` 的记录。
 
 ## 关键实验汇总
 
@@ -173,13 +174,12 @@ COND-001 remaining-time/stage FiLM 已完成四卡训练并被严格否定：最
 
 | 优先级 | 方向 | 当前状态 | 理由 |
 |---:|---|---|---|
-| 1 | 55/10/35 + raw-alpha gate 线上验证 | 待打包 | AID 的方差调度启发；local2 CD/P2S 同升，独立 local3 保持保护行为 |
-| 2 | ROT-001 真实 sampled-point SO(3) 增强 | 四卡完成；local2 CV two-pass `73.75323` | raw 单模型下降，但两遍融合相对 reference `+0.75733`；相对 seed456 候选 `+0.03389`，保留轨迹不单独提交 |
-| 3 | PNX-001 PointNeXt-lite 层次化局部残差编码器 | CUDA smoke 通过；下一步正式四卡训练 | per-rank batch=8 allocator 5.98 GiB（control 5.61）；零初始化保持初始预测一致 |
-| 4 | 曲率感知、可学习的点分布项 | 未尝试 | 手工 repulsion 能提高 CD，但必须联合守住 P2S |
-| 5 | 法向/曲率域消息传递 | 部分探索 | 纯坐标双图已否定；后续若尝试，应显式构造切平面或曲率邻接 |
-| 6 | U-CAN / Noise2Noise 一致性预训练 | 未尝试 | 可利用 noisy-only 数据扩大分布，但训练成本较高 |
-| 7 | CVM-006 线上补测 | 尝试但未提交 | 历史 local2 72.72，优先级低于当前 adaptive ZIP |
+| 1 | PNX-001 PointNeXt-lite 层次化局部残差编码器 | CVM 完成；SPCF 四卡训练中 | CVM `val/loss_sum=2.132445`，比 ROT 的 2.133761 低 0.001316（约 0.062%），目前只能视为基本持平的阶段信号 |
+| 2 | 曲率感知、可学习的点分布项 | 未尝试 | 手工 repulsion 能提高 CD，但必须联合守住 P2S |
+| 3 | 法向/曲率域消息传递 | 部分探索 | 纯坐标双图已否定；后续若尝试，应显式构造切平面或曲率邻接 |
+| 4 | U-CAN / Noise2Noise 一致性预训练 | 未尝试 | 可利用 noisy-only 数据扩大分布，但训练成本较高 |
+| 5 | 55/10/35 + raw-alpha gate | 离线保留，不优先消耗提交机会 | local2 低于 ROT two-pass；作为后续集成多样性素材保留 |
+| 6 | CVM-006 线上补测 | 尝试但未提交 | 历史 local2 72.72，优先级低于当前 77.87 主方案 |
 
 ## 测试
 
