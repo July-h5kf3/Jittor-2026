@@ -44,6 +44,7 @@ class PointNeXtLiteTests(unittest.TestCase):
             "train_spcfgfnpnx001_cvm.yaml",
             "train_spcfgfnpnx001.yaml",
             "predict_spcfgfnpnx001a105_local2.yaml",
+            "predict_spcfgfnpnx001a105_local2_pass2.yaml",
         ):
             task = OmegaConf.load(ROOT / "configs" / "task" / name)
             for kind in ("data", "transform", "system", "model"):
