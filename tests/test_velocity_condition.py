@@ -58,6 +58,7 @@ class VelocityConditionTests(unittest.TestCase):
             "train_spcfgfncond001_cvm.yaml",
             "train_spcfgfncond001.yaml",
             "predict_spcfgfncond001a105_local2.yaml",
+            "predict_spcfgfncond001a105_local2_pass2.yaml",
         ):
             task = OmegaConf.load(ROOT / "configs" / "task" / name)
             for kind in ("data", "transform", "system", "model"):

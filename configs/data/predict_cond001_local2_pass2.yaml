@@ -1,0 +1,12 @@
+predict_dataset:
+  shuffle: False
+  batch_size: 1
+  num_workers: 4
+  datapath:
+    input_dataset_dir: ./results_local2_spcfgfncond001a105/localtest2
+    use_prob: False
+    loader: npy
+    data_name: denoised.npy
+    ignore_check: True
+    data_path:
+      shapenet: [ [./localtest2/local2.txt, 1.0] ]
