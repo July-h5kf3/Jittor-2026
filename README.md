@@ -2,10 +2,11 @@
 
 仓库只保留当前最佳方案、复现实验所需代码和影响决策的关键结论。数据集、checkpoint、预测、提交包和编译 cache 只保存在训练服务器，不进入 Git。
 
-截至 2026-07-14：
+截至 2026-07-19：
 
-- 线上最佳：**76.04**，CVM-002 A105 与独立重训模型 1:1 输出集成，再做 mean/var 校准；CD/P2S = **64.60 / 87.47**（submission `39221`）。
-- 当前 local2 最好：baseline/retrain/seed456=`55/10/35` 输出集成 + mean/var + **raw-alpha gate + CV-adaptive two-pass**，**73.71935**。seed789 第四轨迹已完成，最佳四轨迹扫描只到 73.72168（+0.00233），未达到保留门槛。
+- 线上最佳：**77.87**，ROT-001 单 checkpoint + mean/var + **CV-adaptive two-pass**；CD/P2S = **65.91 / 89.83**，相对上一最佳 76.04 提升 **+1.83**（request_id `2026071921373714762837`）。
+- 上一线上最佳：**76.04**，CVM-002 A105 与独立重训模型 1:1 输出集成，再做 mean/var 校准；CD/P2S = **64.60 / 87.47**（submission `39221`）。
+- 当前 local2 最好：ROT-001 + mean/var + **CV-adaptive two-pass**，**73.75323**；只比未提交的 baseline/retrain/seed456=`55/10/35` 候选 73.71935 高 0.03389，但线上取得了显著增益。
 - Educoder 提交脚本已完成多次真实上传，支持结果等待、临时 502 重试和不确定回调去重。
 
 ## 当前最佳方案
@@ -20,8 +21,8 @@
 | 训练噪声 | sigma=`0.008～0.014`，含 2% 三倍 Laplace outlier | 比简单扩大模型更有效 |
 | 基础推理 | 单次，`predict_alpha=1.05`，无 TTA/融合 | 对应线上 76.03 |
 | 最佳离线后处理 | 每云 mean/var Ridge，alpha 裁剪到 `[0.97,1.10]` | 不读取 clean/mesh；独立集 CD/P2S 同升 |
-| 线上确认集成 | 原最佳与独立重训 raw 预测 1:1 平均，再做 mean/var | 线上 76.04；CD 提升 0.03，P2S 下降 0.02 |
-| 待线上验证 | 55/10/35 三轨迹集成 + raw-alpha gate + CV-adaptive two-pass | 用第二次修正模长的 `std/mean` 调 beta；local2 73.71935，CD/P2S 同升 |
+| 上一线上集成 | 原最佳与独立重训 raw 预测 1:1 平均，再做 mean/var | 线上 76.04；CD/P2S = 64.60/87.47 |
+| 当前线上最佳 | ROT-001 单 checkpoint + mean/var + CV-adaptive two-pass | 用第二次修正模长的 `std/mean` 调 beta；线上 77.87，CD/P2S = 65.91/89.83 |
 
 核心配置：
 
@@ -45,6 +46,9 @@
 | CVM-002 最佳 CVM 权重 | `experiments/spcfgfncvm002_cvm/checkpoint_best.pkl` |
 | CVM-002 最佳完整权重 | `experiments/spcfgfncvm002_spcf/checkpoint_best.pkl` |
 | 独立重训 raw 权重 | `experiments/spcfgfncvm002ema_spcf/checkpoint_best.pkl` |
+| ROT-001 最佳完整权重 | `experiments/spcfgfnrot001_spcf/checkpoint_best.pkl` |
+| 线上 77.87 提交包 | `submission_results/result_rot001_a105_cv_twopass_g050_20260719.zip` |
+| 线上 77.87 提交包 SHA256 | `1cdf56febb033f1a24d1bc6456933cb4584c7532c3126a7eaeb54d3a597369da` |
 | 线上 76.04 提交包 | `submission_results/result_baseline_retrain_ensemble_adaptive.zip` |
 | 线上 76.04 提交包 SHA256 | `e8bce43d21a458ab16b621713f96a141b2cbbc6364c8671a84858f2b1f25fad6` |
 | 上一版候选 | `submission_results/result_baseline075_retrain025_cv_twopass_g050.zip` |
