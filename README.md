@@ -163,18 +163,19 @@ unset EDUCODER_COOKIE
 
 完整数值和置信区间见 [EXPERIMENTS.md](EXPERIMENTS.md)。
 
+COND-001 remaining-time/stage FiLM 已完成四卡训练并被严格否定：最佳 mean/var local2 为 `71.07982`，相对 baseline `-1.91609`（95% CI `[-2.49845,-1.36175]`），CD/P2S 均显著下降，LOCO 范围也全负；不制作线上包，后续转向 PNX-001。
+
 ## 后续最值得尝试
 
 | 优先级 | 方向 | 当前状态 | 理由 |
 |---:|---|---|---|
 | 1 | 55/10/35 + raw-alpha gate 线上验证 | 待打包 | AID 的方差调度启发；local2 CD/P2S 同升，独立 local3 保持保护行为 |
 | 2 | ROT-001 真实 sampled-point SO(3) 增强 | 四卡完成；local2 CV two-pass `73.75323` | raw 单模型下降，但两遍融合相对 reference `+0.75733`；相对 seed456 候选 `+0.03389`，保留轨迹不单独提交 |
-| 3 | PNX-001 PointNeXt-lite 层次化局部残差编码器 | CUDA smoke 通过 | per-rank batch=8 allocator 5.98 GiB（control 5.61）；零初始化保持初始预测一致 |
-| 4 | COND-001 remaining-time/stage FiLM | CPU smoke 通过；下一轮正式训练 | 旧 CVM-009/010 仅因 NCCL 失败；零初始化条件支路值得重新实测 |
-| 5 | 曲率感知、可学习的点分布项 | 未尝试 | 手工 repulsion 能提高 CD，但必须联合守住 P2S |
-| 6 | 法向/曲率域消息传递 | 部分探索 | 纯坐标双图已否定；后续若尝试，应显式构造切平面或曲率邻接 |
-| 7 | U-CAN / Noise2Noise 一致性预训练 | 未尝试 | 可利用 noisy-only 数据扩大分布，但训练成本较高 |
-| 8 | CVM-006 线上补测 | 尝试但未提交 | 历史 local2 72.72，优先级低于当前 adaptive ZIP |
+| 3 | PNX-001 PointNeXt-lite 层次化局部残差编码器 | CUDA smoke 通过；下一步正式四卡训练 | per-rank batch=8 allocator 5.98 GiB（control 5.61）；零初始化保持初始预测一致 |
+| 4 | 曲率感知、可学习的点分布项 | 未尝试 | 手工 repulsion 能提高 CD，但必须联合守住 P2S |
+| 5 | 法向/曲率域消息传递 | 部分探索 | 纯坐标双图已否定；后续若尝试，应显式构造切平面或曲率邻接 |
+| 6 | U-CAN / Noise2Noise 一致性预训练 | 未尝试 | 可利用 noisy-only 数据扩大分布，但训练成本较高 |
+| 7 | CVM-006 线上补测 | 尝试但未提交 | 历史 local2 72.72，优先级低于当前 adaptive ZIP |
 
 ## 测试
 

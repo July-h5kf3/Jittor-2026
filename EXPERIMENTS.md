@@ -45,12 +45,23 @@
 - 对照：`train_spcfgfnpnx001_cvm.yaml` 与 ROT-001 使用同一初始化、真实旋转 transform、四卡 batch、seed 和优化器；唯一变量是 `encoder_type=pointnext_lite`。下一门槛是正式四卡 CVM/SPCF 与 canonical local2 指标。
 - B 榜属性：50,000 点整云仍走固定 1000 点 patch；新增计算只在 250 点 coarse set 上进行，复杂度与整云点数近似线性扩展。
 
-## COND-001：显式 remaining-time/stage 条件（排队）
+## 2026-07-19：COND-001 显式 remaining-time/stage 条件（否定）
 
-- 历史 CVM-009/010 只因 NCCL 下载失败而未启动或未完成，没有 checkpoint 或指标，不能视为模型否定。
-- 唯一变量：在每个 velocity encoder 的 FiLM 中加入 `[remaining_time, stage_index]`；其余初始化、旋转、噪声、模型、优化器与 seed 对齐 ROT-001。
-- 推理可用性：remaining time 来自 distance head 的当前剩余步长，stage index 是公开的模块序号，不读取 clean、mesh 或隐藏信息。
-- 风险控制：condition 的最终 FiLM 层零初始化；旧 `state_dict` 注入后，对任意非零 condition 的初始预测与 control bitwise 相同。待 ROT-001 完成后按信息收益决定是否先于 PNX-001 正式训练。
+- 假设与唯一变量：在每个 velocity encoder 的 FiLM 中加入 `[remaining_time, normalized_stage_index]`，让不同 stage 显式感知残余时间与迭代位置；其余初始化、真实旋转、噪声、模型、优化器、四卡 batch 与 seed 对齐 ROT-001。remaining time 只来自 distance head，stage index 是公开模块序号，不读取 clean、mesh 或隐藏信息。
+- 风险控制：condition 的最终 FiLM 层零初始化；旧 checkpoint 注入后，任意非零 condition 的初始预测与 control bitwise 相同。`tests.test_velocity_condition`、zero-init checkpoint equivalence，以及 V100 `B=8, N=1000` forward/backward smoke 均通过。
+- 训练结果：CVM 最优 epoch 27，`val/loss_sum=2.094119`，checkpoint SHA256 `759f1accb33fc4c2c61197f7fb1dd6f5d497cce28263adfc6f1644954327d049`；SPCF 最优 epoch 66，`val/loss_sum=3.629969`，epoch 96 early stop，checkpoint SHA256 `a4a1e9719814208fab26329357619fadbe312fc1ce9646ddf864ff394ed5cf4b`。SPCF 采样峰值显存约 `6.1/5.1/5.1/5.1 GiB`。
+- 推理验证：固定 seed 123 与 canonical 文件顺序；raw、mean/var 与 CV two-pass 都生成 62/62 个 `float32`、有限数组，shape 与 noisy 逐云一致。pass2 用时 27 分 52 秒；writer 会保留一层源目录前缀，因此融合时以 `results_local2_spcfgfncond001a105_pass2/results_local2_spcfgfncond001a105` 作为 canonical 第二遍根目录，没有重跑或重排样本。
+- local2 结果（同一 `baseline_adaptive` reference）：
+
+  | 输出 | CD | P2S | 总分 | 相对 reference | 总分 95% CI |
+  |---|---:|---:|---:|---:|---:|
+  | COND raw | 54.79508634 | 86.77322508 | 70.78415571 | -2.21175248 | `[-2.89437294,-1.56916672]` |
+  | COND mean/var | **55.16793266** | **86.99171222** | **71.07982244** | **-1.91608575** | `[-2.49844738,-1.36174951]` |
+  | COND CV two-pass | 53.88796292 | 87.52303132 | 70.70549712 | -2.29041107 | `[-3.14392905,-1.48020129]` |
+
+- 相对 ROT CV two-pass，raw/mean-var/two-pass 的配对总分差分别为 `-2.96907828`、`-2.67341155`、`-3.04773687`，95% CI 分别为 `[-3.59014283,-2.38614507]`、`[-3.20418414,-2.18173080]`、`[-3.71979772,-2.42293750]`。相对 seed456 best 则为 `-2.93519297`、`-2.63952624`、`-3.01385156`，95% CI 分别为 `[-3.62730987,-2.28417993]`、`[-3.24840554,-2.06784361]`、`[-3.76650957,-2.30091432]`。
+- 最好的 mean/var 轨迹相对 reference 的 CD/P2S 分别下降 `-2.00090809`、`-1.83126341`，两项 CI 都全负；仅 `13/62` 云提高。12 个类别中只有单样本类别 `02876657` 为正，最大类别 `04379243` 仍下降 `-2.25229473`；leave-one-category-out 总分差始终为负，范围 `[-2.07246425,-1.63920777]`。因此失败是全局泛化回撤，不是少数类别或极端样本驱动。
+- 决定：明确否定 COND-001，不制作线上包、不把 checkpoint 加入集成。更低的训练 validation loss 没有转化为 local2 泛化，表明该条件实现与当前验证目标存在严重泛化失配；阶段捷径或条件分支过拟合是可能机制，但现有证据不足以单独归因。下一正式结构线转向 PNX-001 的层次局部几何编码。
 
 ## 已有线上反馈
 
