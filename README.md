@@ -48,8 +48,11 @@
 | CVM-002 最佳完整权重 | `experiments/spcfgfncvm002_spcf/checkpoint_best.pkl` |
 | 独立重训 raw 权重 | `experiments/spcfgfncvm002ema_spcf/checkpoint_best.pkl` |
 | ROT-001 最佳完整权重 | `experiments/spcfgfnrot001_spcf/checkpoint_best.pkl` |
+| PNX-001 最佳完整权重 | `experiments/spcfgfnpnx001_spcf/checkpoint_best.pkl` |
 | 线上 77.87 提交包 | `submission_results/result_rot001_a105_cv_twopass_g050_20260719.zip` |
 | 线上 77.87 提交包 SHA256 | `1cdf56febb033f1a24d1bc6456933cb4584c7532c3126a7eaeb54d3a597369da` |
+| ROT/PNX 70/30 离线候选包 | `submission_results/result_rot001_pnx001_twopass_ens_p030_20260720.zip` |
+| ROT/PNX 70/30 候选包 SHA256 | `ebcec509073ac86078a08639441e6c6ec1ed6c713b92575b04bf4b1a149b3279` |
 | 线上 76.04 提交包 | `submission_results/result_baseline_retrain_ensemble_adaptive.zip` |
 | 线上 76.04 提交包 SHA256 | `e8bce43d21a458ab16b621713f96a141b2cbbc6364c8671a84858f2b1f25fad6` |
 | 上一版候选 | `submission_results/result_baseline075_retrain025_cv_twopass_g050.zip` |
@@ -176,8 +179,8 @@ PNX-001 已完成四卡训练与 canonical local2 评测：其 CV two-pass 为 `
 
 | 优先级 | 方向 | 当前状态 | 理由 |
 |---:|---|---|---|
-| 1 | 曲率感知、可学习的点分布项 | 准备下一轮 | PNX 单模未超过 ROT；手工 repulsion 能提高 CD，但必须改为训练期、旋转不变的约束并联合守住 P2S |
-| 2 | PNX-001 架构多样性集成 | 单模否定；70/30 集成保留 | local2 相对 ROT `+0.07747`，CI 与 LOCO 全正；正在准备 200 云离线候选，不自动提交 |
+| 1 | UNI-001 旋转不变局部间距损失 | 已实现并通过 CPU/CUDA smoke，待四卡训练 | 训练期匹配 clean-kNN 邻距以改善 CD 覆盖；不约束边方向，避免重复 edge-vector 与手工 repulsion 的 P2S 回撤 |
+| 2 | PNX-001 架构多样性集成 | 单模否定；70/30 候选包已验证 | local2 相对 ROT `+0.07747`，CI 与 LOCO 全正；200 云 ZIP 已严格校验，必须取得用户批准后才能提交 |
 | 3 | 法向/曲率域消息传递 | 部分探索 | 纯坐标双图已否定；后续若尝试，应显式构造切平面或曲率邻接 |
 | 4 | U-CAN / Noise2Noise 一致性预训练 | 未尝试 | 可利用 noisy-only 数据扩大分布，但训练成本较高 |
 | 5 | 55/10/35 + raw-alpha gate | 离线保留，不优先消耗提交机会 | local2 低于 ROT two-pass；作为后续集成多样性素材保留 |

@@ -118,6 +118,12 @@ class StraightPCFModule(ModelSpec):
         self.lam_mag = float(cfg.get('lam_mag', 0.0))    # velocity magnitude (SmoothL1)
         self.lam_edge = float(cfg.get('lam_edge', 0.0))  # endpoint edge-vector preservation (-> CD)
         self.edge_k = int(cfg.get('edge_k', 8))
+        self.lam_spacing = float(cfg.get('lam_spacing', 0.0))
+        self.spacing_k = int(cfg.get('spacing_k', 8))
+        self.spacing_points = int(cfg.get('spacing_points', 256))
+        assert self.lam_spacing >= 0.0, self.lam_spacing
+        assert self.spacing_k >= 1, self.spacing_k
+        assert self.spacing_points >= 2, self.spacing_points
         self.decoder_type = cfg.get('decoder_type', 'mlp')  # 'mlp' | 'graph' (HybridPF)
         self.attention = cfg.get('attention', False)         # self-attention in encoder
         self.multiscale = cfg.get('multiscale', False)      # C3 multi-scale encoder
@@ -310,6 +316,32 @@ class StraightPCFModule(ModelSpec):
         nb = x.reshape(B * n, 3)[flat].reshape(B, n, k, 3)
         return nb - x.unsqueeze(2)
 
+    def _local_spacing_loss(self, endpoint, clean):
+        """Match clean-neighbour spacing without constraining edge direction.
+
+        The clean kNN graph supplies a stable surface topology target.  Comparing
+        log edge lengths is rotation/translation invariant and penalizes both
+        point collapse and excessive spreading, while avoiding the directional
+        over-constraint that made the earlier edge-vector auxiliary regress.
+        """
+        _, n, _ = clean.shape
+        count = min(n, self.spacing_points)
+        if count < n:
+            # Patch points are radius-sorted by cKDTree.  Evenly spaced indices
+            # cover the full patch deterministically instead of only its centre.
+            subset = np.linspace(0, n - 1, count, dtype=np.int64)
+            endpoint = endpoint[:, subset, :]
+            clean = clean[:, subset, :]
+        k = min(self.spacing_k, count - 1)
+        distances = ((clean.unsqueeze(2) - clean.unsqueeze(1)) ** 2).sum(-1)
+        knn = jt.argsort(distances, dim=-1)[0][:, :, 1:k + 1]
+        endpoint_edges = self._gather_edges(endpoint, knn)
+        clean_edges = self._gather_edges(clean, knn)
+        endpoint_length = jt.sqrt((endpoint_edges ** 2).sum(-1) + 1e-12)
+        clean_length = jt.sqrt((clean_edges ** 2).sum(-1) + 1e-12)
+        log_ratio = jt.log((endpoint_length + 1e-6) / (clean_length + 1e-6))
+        return self._huber(log_ratio)
+
     def _aux_losses(self, pred, target, endpoint, clean):
         # all (B,n,3) on the training subset
         aux = 0.0
@@ -393,6 +425,11 @@ class StraightPCFModule(ModelSpec):
         if self.lam_dir > 0 or self.lam_mag > 0 or self.lam_edge > 0:
             # pcl_noisy is now the final endpoint (~ clean_c); last pred_dir is the velocity
             loss = loss + self._aux_losses(pred_dir, pcl_clean - pcl_noisy_L2, pcl_noisy, pcl_clean - seeds_t)
+        if self.lam_spacing > 0:
+            loss = loss + self.lam_spacing * self._local_spacing_loss(
+                pcl_noisy,
+                pcl_clean - seeds_t,
+            )
         return loss
 
     def _loss_spcf(self, pcl_clean, pcl_noisy_L2, seeds_t, t):
@@ -466,6 +503,11 @@ class StraightPCFModule(ModelSpec):
         if self.lam_dir > 0 or self.lam_mag > 0 or self.lam_edge > 0:
             # cur is the final distance-scaled endpoint (~ clean_c)
             spcf_loss = spcf_loss + self._aux_losses(pred_dir, pcl_clean_c - pcl_noisy_c, cur, pcl_clean_c)
+        if self.lam_spacing > 0:
+            spcf_loss = spcf_loss + self.lam_spacing * self._local_spacing_loss(
+                cur,
+                pcl_clean_c,
+            )
         return spcf_loss
 
     # ----- inference (called per-patch by patch_based_denoise) -----
