@@ -40,7 +40,7 @@
 - 四轨迹扫描固定原 `55/10/35` 比例，只把 seed789 权重从 5% 扫到 40%，raw-alpha gate、CV gamma 和 two-pass residual 全部不变。10% 时最高：CD/P2S/总分 `57.26989 / 90.17347 / 73.72168`，相对 73.71935 为 `+0.00233`，95% CI `[+0.00104,+0.00366]`，LOCO 范围 `[+0.00132,+0.00262]`；15% 后 CD 开始回撤，35% 以上总分显著下降。
 - 决定：增益比 `+0.05` 保留门槛低一个数量级，不生成提交包、不把第四模型加入 A 榜候选；checkpoint 和 canonical raw 预测保留作误差研究证据。
 
-## PNX-001：PointNeXt-lite 层次化残差编码器（CVM 完成，SPCF 训练中）
+## PNX-001：PointNeXt-lite 层次化残差编码器（单模否定，集成保留）
 
 - 假设：普通全局注意力、Point Transformer 和 RoPE 已被否定，但当前编码器始终停留在 1000 点单尺度图；显式 coarse context 可能减少局部 patch 的覆盖收缩，从而优先改善 CD。
 - 唯一结构变量：在已验证的 EdgeConv 特征后加入窄通道层次残差分支。按距离排序的 patch 每 4 点确定一个 deterministic coarse seed，64 维、k=16 的位置 kNN 聚合 fine 特征，在 coarse 图做一次残差更新，再用 inverse-distance 3-NN 回插；不引入全局 attention。单卡 batch=32 smoke 曾使 PNX 与原 CVM-002 control 同样 OOM；检查 Jittor `Dataset` 源码确认正式全局 batch=32 会被四 rank 切为每 GPU 8，因此该 OOM 不构成结构否定，显存判定必须使用 per-rank batch=8。
@@ -48,7 +48,19 @@
 - 对照：`train_spcfgfnpnx001_cvm.yaml` 与 ROT-001 使用同一初始化、真实旋转 transform、四卡 batch、seed 和优化器；唯一变量是 `encoder_type=pointnext_lite`。
 - CVM 正式结果：best epoch 36，`val/loss_sum=2.132445`，epoch 56 按 patience 20 early stop；checkpoint SHA256 `3eabcf7ba11a4ff291fa96d5feabfab1f40306e66534d05db07330a9e2f0f086`。第一次共享 JIT cache 启动发生单 rank segfault，进程干净回收后使用隔离的 per-rank cache 完成同一四卡配方。
 - 与 ROT CVM 的 best epoch 22、`val/loss_sum=2.133761` 相比，PNX 低 `0.001316`，相对改善约 `0.0617%`，统计与实际意义都很小，应判定为基本持平而非已经胜出。COND-001 的 CVM loss 更低至 `2.094119` 却在 local2 明显失败，进一步说明 CVM validation loss 不能替代 SPCF、canonical local2 与线上证据。
-- SPCF 已按 GPU `0,1,2,3`、`NP=4`、seed 123 开始正式训练；在 SPCF 完成并做 raw/mean-var/two-pass 严格配对评测前，不对 PNX 的最终优劣下结论。
+- SPCF 正式结果：GPU `0,1,2,3`、`NP=4`、seed 123，best epoch 32，`val/loss_sum=4.008058`；训练正常结束，checkpoint SHA256 `726176761d49b61eb4b8de8aad66bb7f01f51ee57ee3b88f71657fc7831b7708`。该 loss 比 ROT SPCF 的 `4.084705` 低约 1.88%，但以下 local2 结果再次证明 validation loss 不能直接代理最终指标。
+- canonical local2 raw、mean/var、pass2 与 CV two-pass 均完成 62/62；所有数组为 `float32`、finite，shape 与 noisy 逐云一致，文件顺序和 seed 123 未改变。pass2 writer 保留了源目录前缀，融合时使用其内层 canonical 根目录，没有重跑或重排样本。
+- local2 结果（同一 `baseline_adaptive` reference）：
+
+  | 输出 | CD | P2S | 总分 | 相对 reference | 总分 95% CI |
+  |---|---:|---:|---:|---:|---:|
+  | PNX raw | 56.65794030 | 88.35394231 | 72.50594130 | -0.48996689 | `[-0.71537780,-0.22669786]` |
+  | PNX mean/var | 56.91187683 | 88.46536708 | 72.68862196 | -0.30728623 | `[-0.51866126,-0.05831002]` |
+  | PNX CV two-pass | **57.17676085** | **89.79146970** | **73.48411527** | **+0.48820708** | `[+0.16333283,+0.83926696]` |
+
+- 相对 ROT CV two-pass，PNX two-pass 的 CD/P2S/总分差为 `-0.12654492 / -0.41169251 / -0.26911871`；总分 95% CI `[-0.40457169,-0.13796458]`，仅 `18/62` 云获胜，12 类 leave-one-category-out 范围 `[-0.31397729,-0.23355529]`。因此 PNX 单模型是稳定负向，主要损失来自 P2S，不制作单模线上包。
+- PNX 仍提供了有效误差多样性。固定输出空间集成 `0.70*ROT + 0.30*PNX` 的 CD/P2S/总分为 `57.45936157 / 90.20204048 / 73.83070103`，相对 ROT 为 `+0.15605581 / -0.00112173 / +0.07746704`；总分 95% CI `[+0.03541857,+0.12107780]`，`44/62` 云获胜，LOCO 范围 `[+0.05797595,+0.08707134]`。PNX 权重 0.20 与 0.40 也分别提高 `+0.07190266`、`+0.06480754`，说明收益位于宽平台而非尖锐单点。保留 0.30 固定权重候选，并生成 200 云离线包后再请求线上批准。
+- 决定：否定 PNX-001 作为替代主干，但保留其 checkpoint 和 two-pass 输出作为架构多样性成员；当前 local2 最好更新为 ROT/PNX 70/30 two-pass 集成的 `73.83070103`。下一训练线转向可学习的局部点分布约束，直接针对 CD 覆盖率并保护 P2S。
 - B 榜属性：50,000 点整云仍走固定 1000 点 patch；新增计算只在 250 点 coarse set 上进行，复杂度与整云点数近似线性扩展。
 
 ## 2026-07-19：COND-001 显式 remaining-time/stage 条件（否定）

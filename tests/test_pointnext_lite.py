@@ -45,6 +45,8 @@ class PointNeXtLiteTests(unittest.TestCase):
             "train_spcfgfnpnx001.yaml",
             "predict_spcfgfnpnx001a105_local2.yaml",
             "predict_spcfgfnpnx001a105_local2_pass2.yaml",
+            "predict_spcfgfnpnx001a105_submit.yaml",
+            "predict_spcfgfnpnx001a105_submit_pass2.yaml",
         ):
             task = OmegaConf.load(ROOT / "configs" / "task" / name)
             for kind in ("data", "transform", "system", "model"):
@@ -83,6 +85,17 @@ class PointNeXtLiteTests(unittest.TestCase):
         baseline_output = baseline(points).numpy()
         pointnext_output = pointnext(points).numpy()
         np.testing.assert_array_equal(pointnext_output, baseline_output)
+
+    def test_submission_pipeline_contract(self):
+        pipeline = (
+            ROOT / "scripts" / "run_pnx001_ensemble_candidate_pipeline.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn("--seed 123", pipeline)
+        self.assertIn("--weights 0.70,0.30", pipeline)
+        self.assertIn("--expected-count 200", pipeline)
+        self.assertIn("--score-feature cv", pipeline)
+        self.assertIn("--gamma 0.50", pipeline)
+        self.assertNotIn("submit_educoder.py --yes", pipeline)
 
     @unittest.skipUnless(
         os.environ.get("PNX_CUDA_SMOKE") == "1",
