@@ -15,6 +15,13 @@ class AscendEnvironmentContractTests(unittest.TestCase):
         self.assertIn(SHA, text)
         self.assertIn("/data/ldc/cache/jittor-track2-ascend", text)
 
+    def test_activation_pins_the_container_python_config(self):
+        text = (ROOT / "scripts/ascend_env.sh").read_text(encoding="utf-8")
+        self.assertIn(
+            "export python_config_path=/usr/local/python3.11.15/bin/python3.11-config",
+            text,
+        )
+
     def test_activation_is_safe_to_source(self):
         text = (ROOT / "scripts/ascend_env.sh").read_text(encoding="utf-8")
         self.assertNotIn("set -euo pipefail", text)
