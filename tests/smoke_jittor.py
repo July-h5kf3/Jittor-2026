@@ -6,14 +6,11 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import jittor as jt
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))
 from plr3d.backend import add_device_argument, configure_device
-from plr3d.models import DenoiseNet
-from plr3d.ops.selective_scan import selective_scan, selective_scan_reference
 
 
 def parse_args(argv=None):
@@ -39,16 +36,29 @@ def scan_inputs(seed=7):
     return arrays
 
 
-def run_scan(arrays, use_cuda, custom):
-    jt.flags.use_cuda = int(use_cuda)
-    values = [jt.array(array).float32() for array in arrays]
-    output = selective_scan(*values) if custom else selective_scan_reference(*values)
-    gradients = jt.grad((output ** 2).sum(), values)
+def scan_validation_plan(device):
+    if device == "cpu":
+        return (("cpu", False),)
+    if device in ("cuda", "acl"):
+        return (("cpu", False), (device, True))
+    raise ValueError("unsupported smoke device: {}".format(device))
+
+
+def run_scan(arrays, device, custom, jt_module, custom_scan, reference_scan):
+    configure_device(device, jt_module)
+    values = [jt_module.array(array).float32() for array in arrays]
+    output = custom_scan(*values) if custom else reference_scan(*values)
+    gradients = jt_module.grad((output ** 2).sum(), values)
     return output.numpy(), [gradient.numpy() for gradient in gradients]
 
 
 def main(argv=None):
     args = parse_args(argv)
+    import jittor as jt
+
+    from plr3d.models import DenoiseNet
+    from plr3d.ops.selective_scan import selective_scan, selective_scan_reference
+
     configure_device(args.device, jt)
     model = DenoiseNet()
     state = model.state_dict()
@@ -56,9 +66,25 @@ def main(argv=None):
     assert sum(value.numel() for value in state.values()) == 16278412
 
     arrays = scan_inputs()
-    reference, reference_grads = run_scan(arrays, False, False)
-    if jt.compiler.has_cuda:
-        candidate, candidate_grads = run_scan(arrays, True, True)
+    plan = scan_validation_plan(args.device)
+    reference_device, reference_custom = plan[0]
+    reference, reference_grads = run_scan(
+        arrays,
+        reference_device,
+        reference_custom,
+        jt,
+        selective_scan,
+        selective_scan_reference,
+    )
+    for candidate_device, candidate_custom in plan[1:]:
+        candidate, candidate_grads = run_scan(
+            arrays,
+            candidate_device,
+            candidate_custom,
+            jt,
+            selective_scan,
+            selective_scan_reference,
+        )
         np.testing.assert_allclose(candidate, reference, rtol=2e-5, atol=2e-6)
         for candidate_grad, reference_grad in zip(candidate_grads, reference_grads):
             np.testing.assert_allclose(

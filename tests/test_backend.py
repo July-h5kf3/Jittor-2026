@@ -1,17 +1,31 @@
 import argparse
 import ast
+import importlib.util
 import io
 import json
 import pathlib
 import sys
+import types
 import unittest
 from unittest import mock
+
+import numpy as np
 
 import main
 from main import parse_args
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+
+def load_smoke_module():
+    script = ROOT / "tests" / "smoke_jittor.py"
+    specification = importlib.util.spec_from_file_location(
+        "smoke_jittor_for_test", script
+    )
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    return module
 
 
 class Flags:
@@ -83,6 +97,100 @@ class SparseJittor:
 
 
 class BackendTests(unittest.TestCase):
+    def test_acl_smoke_never_selects_cuda_when_cuda_is_available(self):
+        smoke = load_smoke_module()
+        jt = FakeJittor(has_cuda=True, has_acl=True)
+
+        class Parameter:
+            def __init__(self, size):
+                self.size = size
+
+            def numel(self):
+                return self.size
+
+        class Model:
+            def state_dict(self):
+                return {
+                    str(index): Parameter(16278412 if index == 0 else 0)
+                    for index in range(1280)
+                }
+
+        models = types.ModuleType("plr3d.models")
+        models.DenoiseNet = Model
+        ops = types.ModuleType("plr3d.ops")
+        ops.__path__ = []
+        selective_scan = types.ModuleType("plr3d.ops.selective_scan")
+        selective_scan.selective_scan = lambda *values: values[0]
+        selective_scan.selective_scan_reference = lambda *values: values[0]
+
+        with mock.patch.dict(
+            sys.modules,
+            {
+                "jittor": jt,
+                "plr3d.models": models,
+                "plr3d.ops": ops,
+                "plr3d.ops.selective_scan": selective_scan,
+            },
+        ), mock.patch.object(smoke, "scan_inputs", return_value=[object()]), mock.patch.object(
+            smoke,
+            "run_scan",
+            return_value=(np.array([1.0]), []),
+        ) as run_scan, mock.patch("sys.stdout", io.StringIO()):
+            smoke.main(["--device", "acl"])
+
+        devices = [call.args[1] for call in run_scan.call_args_list]
+        self.assertEqual(devices, ["cpu", "acl"])
+        self.assertNotIn("cuda", devices)
+
+    def test_scan_plan_switches_every_run_through_shared_backend(self):
+        smoke = load_smoke_module()
+        self.assertEqual(smoke.scan_validation_plan("cpu"), (("cpu", False),))
+        self.assertEqual(
+            smoke.scan_validation_plan("cuda"),
+            (("cpu", False), ("cuda", True)),
+        )
+        plan = smoke.scan_validation_plan("acl")
+        self.assertEqual(plan, (("cpu", False), ("acl", True)))
+
+        class Value:
+            def float32(self):
+                return self
+
+            def __pow__(self, exponent):
+                return self
+
+            def sum(self):
+                return self
+
+            def numpy(self):
+                return np.array([1.0])
+
+        class Jittor:
+            @staticmethod
+            def array(value):
+                return Value()
+
+            @staticmethod
+            def grad(output, values):
+                return [Value() for value in values]
+
+        jt = Jittor()
+        with mock.patch.object(smoke, "configure_device") as configure:
+            for device, custom in plan:
+                smoke.run_scan(
+                    [np.array([1.0])],
+                    device,
+                    custom,
+                    jt,
+                    lambda *values: values[0],
+                    lambda *values: values[0],
+                )
+
+        self.assertEqual(
+            configure.call_args_list,
+            [mock.call("cpu", jt), mock.call("acl", jt)],
+        )
+
     def test_smoke_cli_wires_shared_device_configuration_before_model_creation(self):
         tree = ast.parse((ROOT / "tests" / "smoke_jittor.py").read_text(encoding="utf-8"))
         functions = {
@@ -144,6 +252,13 @@ class BackendTests(unittest.TestCase):
 
     def test_doctor_parser_accepts_acl_device(self):
         self.assertEqual(parse_args(["doctor", "--device", "acl"]).device, "acl")
+
+    def test_doctor_deep_help_describes_selected_device_smoke(self):
+        output = io.StringIO()
+        with mock.patch("sys.stdout", output), self.assertRaises(SystemExit):
+            parse_args(["doctor", "--help"])
+
+        self.assertIn("selected-device forward/backward smoke", output.getvalue())
 
     def test_main_only_prepares_cuda_layout_for_cuda_doctor(self):
         with mock.patch("main.prepare_conda_cuda_layout") as prepare, mock.patch(

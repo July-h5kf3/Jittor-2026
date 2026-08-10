@@ -156,7 +156,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
     doctor_parser = subparsers.add_parser("doctor", help="check the Jittor environment")
     add_device_argument(doctor_parser)
-    doctor_parser.add_argument("--deep", action="store_true", help="run CUDA forward/backward smoke")
+    doctor_parser.add_argument(
+        "--deep",
+        action="store_true",
+        help="run selected-device forward/backward smoke",
+    )
 
     for name in ENTRYPOINTS:
         subparser = subparsers.add_parser(name, help=f"delegate to {ENTRYPOINTS[name]}")
