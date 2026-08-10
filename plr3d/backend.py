@@ -30,9 +30,18 @@ def configure_device(device, jt_module=None):
         if not hasattr(jt_module.flags, "use_acl"):
             raise BackendError("Jittor does not expose the ACL device flag")
 
-    if hasattr(jt_module.flags, "use_acl"):
-        jt_module.flags.use_acl = int(device == "acl")
-    jt_module.flags.use_cuda = int(device == "cuda")
+    flags = jt_module.flags
+    if device == "acl":
+        flags.use_cuda = 0
+        flags.use_acl = 1
+    elif device == "cuda":
+        if hasattr(flags, "use_acl"):
+            flags.use_acl = 0
+        flags.use_cuda = 1
+    else:
+        flags.use_cuda = 0
+        if hasattr(flags, "use_acl"):
+            flags.use_acl = 0
 
 
 def device_status(device, jt_module=None, environ=None):
@@ -45,26 +54,19 @@ def device_status(device, jt_module=None, environ=None):
 
     status = {
         "device": device,
-        "jittor_commit": environ.get("NKAI_JITTOR_COMMIT"),
+        "jittor_commit": environ.get("NKAI_JITTOR_COMMIT") or "unknown",
         "has_cuda": bool(getattr(compiler, "has_cuda", False)),
         "has_acl": bool(getattr(compiler, "has_acl", False)),
-        "use_cuda": int(getattr(flags, "use_cuda", 0)),
-        "use_acl": int(getattr(flags, "use_acl", 0)),
-        "nvcc_path": getattr(compiler, "nvcc_path", None),
-        "tikcc_path": getattr(compiler, "tikcc_path", None),
-        "ascend_toolkit_home": environ.get("ASCEND_TOOLKIT_HOME"),
-        "jittor_home": environ.get("JITTOR_HOME"),
+        "use_cuda": bool(getattr(flags, "use_cuda", False)),
+        "use_acl": bool(getattr(flags, "use_acl", False)),
+        "nvcc_path": getattr(compiler, "nvcc_path", None) or "",
+        "tikcc_path": getattr(compiler, "tikcc_path", None) or "",
+        "ascend_toolkit_home": environ.get("ASCEND_TOOLKIT_HOME") or "",
+        "jittor_home": environ.get("JITTOR_HOME") or "",
         "in_mpi": bool(getattr(jt_module, "in_mpi", False)),
-        "rank": getattr(jt_module, "rank", 0),
-        "world_size": getattr(jt_module, "world_size", 1),
+        "rank": getattr(jt_module, "rank", None) or 0,
+        "world_size": getattr(jt_module, "world_size", None) or 1,
     }
-    status.update(
-        {
-            "NKAI_JITTOR_COMMIT": status["jittor_commit"],
-            "ASCEND_TOOLKIT_HOME": status["ascend_toolkit_home"],
-            "JITTOR_HOME": status["jittor_home"],
-        }
-    )
     return status
 
 

@@ -1,3 +1,4 @@
+import argparse
 import unittest
 
 
@@ -12,6 +13,31 @@ class FlagsWithoutAcl:
 
     def __init__(self):
         self.use_cuda = 0
+
+
+class EventFlags:
+    def __init__(self, use_cuda=0, use_acl=0):
+        self.events = []
+        self._use_cuda = use_cuda
+        self._use_acl = use_acl
+
+    @property
+    def use_cuda(self):
+        return self._use_cuda
+
+    @use_cuda.setter
+    def use_cuda(self, value):
+        self.events.append(("use_cuda", value))
+        self._use_cuda = value
+
+    @property
+    def use_acl(self):
+        return self._use_acl
+
+    @use_acl.setter
+    def use_acl(self, value):
+        self.events.append(("use_acl", value))
+        self._use_acl = value
 
 
 class Compiler:
@@ -31,7 +57,30 @@ class FakeJittor:
         self.in_mpi = False
 
 
+class SparseJittor:
+    def __init__(self):
+        self.flags = type("Flags", (), {"use_cuda": None, "use_acl": None})()
+        self.compiler = type(
+            "Compiler",
+            (),
+            {"has_cuda": None, "has_acl": None, "nvcc_path": None, "tikcc_path": None},
+        )()
+        self.rank = None
+        self.world_size = None
+        self.in_mpi = None
+
+
 class BackendTests(unittest.TestCase):
+    def test_add_device_argument_uses_cuda_default_and_supported_choices(self):
+        from plr3d.backend import DEVICES, add_device_argument
+
+        parser = argparse.ArgumentParser()
+        self.assertIs(add_device_argument(parser), parser)
+
+        action = next(action for action in parser._actions if action.dest == "device")
+        self.assertEqual(parser.parse_args([]).device, "cuda")
+        self.assertEqual(tuple(action.choices), DEVICES)
+
     def test_acl_enables_acl_and_disables_cuda(self):
         from plr3d.backend import configure_device
 
@@ -50,6 +99,26 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(jt.flags.use_cuda, 1)
         self.assertEqual(jt.flags.use_acl, 0)
 
+    def test_switching_from_cuda_to_acl_disables_cuda_first(self):
+        from plr3d.backend import configure_device
+
+        jt = FakeJittor()
+        jt.flags = EventFlags(use_cuda=1)
+
+        configure_device("acl", jt)
+
+        self.assertEqual(jt.flags.events, [("use_cuda", 0), ("use_acl", 1)])
+
+    def test_switching_from_acl_to_cuda_disables_acl_first(self):
+        from plr3d.backend import configure_device
+
+        jt = FakeJittor()
+        jt.flags = EventFlags(use_acl=1)
+
+        configure_device("cuda", jt)
+
+        self.assertEqual(jt.flags.events, [("use_acl", 0), ("use_cuda", 1)])
+
     def test_cpu_disables_cuda_and_acl(self):
         from plr3d.backend import configure_device
 
@@ -66,6 +135,18 @@ class BackendTests(unittest.TestCase):
 
         with self.assertRaisesRegex(BackendError, "ACL backend is unavailable"):
             configure_device("acl", FakeJittor(has_acl=False))
+
+    def test_cuda_requires_an_available_backend(self):
+        from plr3d.backend import BackendError, configure_device
+
+        with self.assertRaisesRegex(BackendError, "CUDA backend is unavailable"):
+            configure_device("cuda", FakeJittor(has_cuda=False))
+
+    def test_unknown_device_raises_backend_error(self):
+        from plr3d.backend import BackendError, configure_device
+
+        with self.assertRaises(BackendError):
+            configure_device("metal", FakeJittor())
 
     def test_acl_requires_an_acl_flag(self):
         from plr3d.backend import BackendError, configure_device
@@ -119,6 +200,43 @@ class BackendTests(unittest.TestCase):
         self.assertFalse(status["in_mpi"])
         self.assertTrue(status["has_acl"])
         self.assertEqual(status["tikcc_path"], "/opt/ascend/bin/tikcc")
+
+    def test_status_normalizes_missing_values_and_has_no_environment_aliases(self):
+        from plr3d.backend import device_status
+
+        for environment in ({}, {"NKAI_JITTOR_COMMIT": None}):
+            with self.subTest(environment=environment):
+                status = device_status("cpu", SparseJittor(), environment)
+
+                self.assertEqual(
+                    set(status),
+                    {
+                        "device",
+                        "jittor_commit",
+                        "has_cuda",
+                        "has_acl",
+                        "use_cuda",
+                        "use_acl",
+                        "nvcc_path",
+                        "tikcc_path",
+                        "ascend_toolkit_home",
+                        "jittor_home",
+                        "in_mpi",
+                        "rank",
+                        "world_size",
+                    },
+                )
+                self.assertEqual(status["jittor_commit"], "unknown")
+                self.assertEqual(status["ascend_toolkit_home"], "")
+                self.assertEqual(status["jittor_home"], "")
+                self.assertEqual(status["nvcc_path"], "")
+                self.assertEqual(status["tikcc_path"], "")
+                self.assertEqual(status["rank"], 0)
+                self.assertEqual(status["world_size"], 1)
+                self.assertIs(status["use_cuda"], False)
+                self.assertIs(status["use_acl"], False)
+                self.assertIs(status["has_cuda"], False)
+                self.assertIs(status["has_acl"], False)
 
 
 if __name__ == "__main__":
