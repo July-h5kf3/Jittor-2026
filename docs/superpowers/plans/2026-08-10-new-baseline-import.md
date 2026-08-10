@@ -18,7 +18,7 @@
 - Preserve: `docs/superpowers/plans/2026-08-10-new-baseline-import.md`
 - Create: all source files contained under archive path `contest2_NKAI_031/code/`, except `NUL`
 
-- [ ] **Step 1: Verify branch and clean plan-only state**
+- [x] **Step 1: Verify branch and clean plan-only state**
 
 Run:
 
@@ -29,7 +29,7 @@ git status --short
 
 Expected: branch is `new`; only the plan file is untracked before its documentation commit.
 
-- [ ] **Step 2: Remove the tracked legacy application tree**
+- [x] **Step 2: Remove the tracked legacy application tree**
 
 Run:
 
@@ -39,7 +39,7 @@ git rm -r .gitignore README.md configs datalist evaluate.py requirements.txt run
 
 Expected: Git stages deletion of the old baseline while retaining `docs/superpowers/`.
 
-- [ ] **Step 3: Extract and import the authoritative code**
+- [x] **Step 3: Extract and import the authoritative code**
 
 Run:
 
@@ -55,7 +55,7 @@ cp "$staging_dir/contest2_NKAI_031/提交说明文档.pdf" docs/submission-docum
 
 Expected: archive `code/` contents are at repository root, `environment.yaml` is at root, and submission documents have stable ASCII filenames.
 
-- [ ] **Step 4: Confirm excluded artifacts**
+- [x] **Step 4: Confirm excluded artifacts**
 
 Run:
 
@@ -66,7 +66,7 @@ find . -name '__pycache__' -o -name '*.pyc'
 
 Expected: `NUL` does not exist and the generated-cache search prints nothing.
 
-- [ ] **Step 5: Normalize source-provided text formatting**
+- [x] **Step 5: Normalize source-provided text formatting**
 
 Run `rg -l $'\r$'` to identify CRLF files and `git diff --check` to identify other trailing whitespace. Convert only the reported files to LF and remove trailing horizontal whitespace.
 
@@ -77,7 +77,7 @@ Expected: `rg -l $'\r$'` prints nothing and `git diff --check` succeeds after th
 **Files:**
 - Modify: `README.md`
 
-- [ ] **Step 1: Update commands for the flattened repository layout**
+- [x] **Step 1: Update commands for the flattened repository layout**
 
 Apply these exact changes in `README.md`:
 
@@ -92,7 +92,7 @@ Apply these exact changes in `README.md`:
 
 Replace the sentence before that command block with `在仓库根目录执行：`. Also replace the text `文件位于 ZIP 根目录` with `文件位于仓库根目录`.
 
-- [ ] **Step 2: Search for stale root-layout instructions**
+- [x] **Step 2: Search for stale root-layout instructions**
 
 Run:
 
@@ -107,7 +107,7 @@ Expected: no matches.
 **Files:**
 - Verify: repository root and archive manifest
 
-- [ ] **Step 1: Compare imported code paths with the archive**
+- [x] **Step 1: Compare imported code paths with the archive**
 
 Run:
 
@@ -137,7 +137,7 @@ cmp "$staging_dir/contest2_NKAI_031/提交说明文档.pdf" docs/submission-docu
 
 Expected: no archive source file is missing; extra files are limited to `.git`, `docs/superpowers/`, and the normalized environment/PDF placement.
 
-- [ ] **Step 2: Review Git changes**
+- [x] **Step 2: Review Git changes**
 
 Run:
 
@@ -149,7 +149,7 @@ git diff --check
 
 Expected: replacement is limited to the approved baseline import, and `git diff --check` prints nothing.
 
-- [ ] **Step 3: Commit the baseline import**
+- [x] **Step 3: Commit the baseline import**
 
 Run:
 
@@ -168,7 +168,7 @@ Expected: the import is committed on `new` with no remote operation.
 - Test: `tests/smoke_jittor.py`
 - Verify: `tools/audit_source_archive.py`
 
-- [ ] **Step 1: Compile Python sources**
+- [x] **Step 1: Compile Python sources**
 
 Run:
 
@@ -177,6 +177,8 @@ python -m compileall -q .
 ```
 
 Expected: exit code 0.
+
+Local result: passed with the host command `python3 -m compileall -q .` because this macOS host does not provide a `python` alias.
 
 - [ ] **Step 2: Run CPU-safe unit tests**
 
@@ -188,7 +190,9 @@ python -m unittest tests.test_source_policy tests.test_routing
 
 Expected: all tests pass.
 
-- [ ] **Step 3: Run the source policy audit**
+Local result: both source-policy checks passed; routing-test import is deferred because the local host does not have Jittor. It will run in the approved remote `ldc` image.
+
+- [x] **Step 3: Run the source policy audit**
 
 Run:
 
@@ -197,6 +201,8 @@ python tools/audit_source_archive.py --root .
 ```
 
 Expected: the audit reports success. If it rejects `docs/superpowers/` planning metadata, rerun against a temporary export of the deliverable source tree and report the distinction explicitly.
+
+Local result: passed with `audit_pass: true`, zero errors, 69 audited files, and 2,855,640 source bytes.
 
 - [ ] **Step 4: Attempt the Jittor smoke test when dependencies permit**
 
@@ -207,6 +213,8 @@ python tests/smoke_jittor.py
 ```
 
 Expected: pass on a compatible Jittor/CUDA host; otherwise record the exact missing dependency or hardware limitation.
+
+Local result: deferred to `ssh zhiyuan-huawei` under `/data/ldc` using the `ldc` image, after user review and transfer approval.
 
 - [ ] **Step 5: Remove generated caches and record final state**
 
@@ -219,3 +227,10 @@ git log -3 --oneline --decorate
 ```
 
 Expected: branch is `new`; worktree is clean after any cache cleanup commit if needed; no push has occurred.
+
+### Deferred Remote Validation (after user review)
+
+- Transfer the reviewed local branch contents through `ssh zhiyuan-huawei` to a staging location under `/data/ldc`; do not use GitHub from the remote host.
+- Select the experiment image whose name or configuration includes `ldc`.
+- Run the Jittor/CUDA smoke test and later experiments inside that image.
+- This remote transfer is intentionally excluded from the current local-organization phase.

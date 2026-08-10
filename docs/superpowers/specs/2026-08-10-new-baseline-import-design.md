@@ -62,3 +62,5 @@ Track2/
 ## Remote Policy
 
 Do not push, force-update, or otherwise modify the remote. The user will review the local `new` branch first.
+
+After approval, transfer the reviewed local source through `ssh zhiyuan-huawei` into `/data/ldc`; the remote host must not be expected to access GitHub directly. Run experiments only inside the available image whose name or configuration includes `ldc`.
