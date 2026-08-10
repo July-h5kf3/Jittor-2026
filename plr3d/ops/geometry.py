@@ -22,11 +22,21 @@ def gather_points(points: jt.Var, indices: jt.Var) -> jt.Var:
     if indices.shape[0] != batch:
         raise ValueError("batch dimension mismatch in gather_points")
     tail_shape = tuple(indices.shape[1:])
-    base_shape = (batch,) + (1,) * len(tail_shape)
-    base = (jt.arange(batch).int32() * count).reshape(base_shape)
-    flat_indices = (indices.int32() + base).reshape(-1)
-    gathered = points.reshape(batch * count, channels)[flat_indices]
-    return gathered.reshape((batch,) + tail_shape + (channels,))
+    # ACL's advanced Index operator does not support the flattened indexing
+    # form used by the CUDA path.  Jittor ACL provides Gather instead.  Move
+    # the point axis to dim 2 so batch and channel dimensions can be preserved
+    # while the arbitrary query/K tail is flattened for Gather.
+    flat_count = 1
+    for size in tail_shape:
+        flat_count *= size
+    source = points.permute(0, 2, 1)
+    gather_index = indices.int32().reshape(batch, 1, flat_count).broadcast(
+        (batch, channels, flat_count)
+    )
+    gathered = jt.gather(source, 2, gather_index)
+    return gathered.reshape((batch, channels) + tail_shape).permute(
+        0, *range(2, 2 + len(tail_shape)), 1
+    )
 
 
 def knn_indices(query: jt.Var, reference: jt.Var, k: int) -> Tuple[jt.Var, jt.Var]:
@@ -45,7 +55,10 @@ def knn_indices(query: jt.Var, reference: jt.Var, k: int) -> Tuple[jt.Var, jt.Va
         query = query.float32()
     if reference.dtype != "float32":
         reference = reference.float32()
-    if query.shape[2] == 3:
+    # ``jt.misc.knn`` is a CUDA custom operator.  The pinned ACL backend has
+    # no ACL KNN implementation, while the regular pairwise distance/topk
+    # composition is supported and stays on the selected ACL device.
+    if query.shape[2] == 3 and not getattr(jt.flags, "use_acl", 0):
         distances, indices = jt.misc.knn(query, reference, k)
     else:
         pairwise = ((query.unsqueeze(2) - reference.unsqueeze(1)) ** 2).sum(dim=-1)
