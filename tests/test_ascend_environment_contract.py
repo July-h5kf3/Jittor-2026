@@ -106,6 +106,13 @@ class AscendEnvironmentContractTests(unittest.TestCase):
         )
         self.assertNotIn("git config --global", text)
 
+    def test_remote_setup_normalizes_jittor_checkout_ownership_before_git_checks(self):
+        text = (ROOT / "scripts/setup_ascend_env.sh").read_text(encoding="utf-8")
+        ownership = 'chown -R "$(id -u):$(id -g)" "$JITTOR_ROOT"'
+        git_check = 'git -c safe.directory="$JITTOR_ROOT" -C "$JITTOR_ROOT" rev-parse HEAD'
+        self.assertIn(ownership, text)
+        self.assertLess(text.index(ownership), text.index(git_check))
+
     def test_jittor_source_validation_accepts_only_clean_matching_revision(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp = Path(temp_dir)

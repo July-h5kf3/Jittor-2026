@@ -19,6 +19,7 @@ if [ ! -d "$WHEEL_ROOT" ]; then
     printf 'error: wheel directory not found: %s\n' "$WHEEL_ROOT" >&2
     exit 1
 fi
+chown -R "$(id -u):$(id -g)" "$JITTOR_ROOT"
 if ! actual_jittor_sha=$(git -c safe.directory="$JITTOR_ROOT" -C "$JITTOR_ROOT" rev-parse HEAD); then
     printf 'error: unable to read Jittor revision from %s\n' "$JITTOR_ROOT" >&2
     exit 1
