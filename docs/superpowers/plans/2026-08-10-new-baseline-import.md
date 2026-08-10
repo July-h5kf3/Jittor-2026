@@ -66,6 +66,12 @@ find . -name '__pycache__' -o -name '*.pyc'
 
 Expected: `NUL` does not exist and the generated-cache search prints nothing.
 
+- [ ] **Step 5: Normalize source-provided text formatting**
+
+Run `rg -l $'\r$'` to identify CRLF files and `git diff --check` to identify other trailing whitespace. Convert only the reported files to LF and remove trailing horizontal whitespace.
+
+Expected: `rg -l $'\r$'` prints nothing and `git diff --check` succeeds after the files are staged.
+
 ### Task 2: Normalize root-level documentation
 
 **Files:**

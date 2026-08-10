@@ -48,6 +48,7 @@ Track2/
 6. Keep one root `requirements.txt`; use the documented minimal Jittor/NumPy runtime requirements.
 7. Omit the Windows artifact `NUL`, empty directories, generated caches, weights, data, predictions, and logs.
 8. Update documentation paths affected by removing the outer `code/` directory.
+9. Normalize imported text files to LF line endings and remove trailing horizontal whitespace without changing program values or behavior.
 
 ## Validation
 

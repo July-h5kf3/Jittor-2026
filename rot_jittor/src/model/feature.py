@@ -41,7 +41,7 @@ def _deterministic_group_sum(messages, node_count, neighbor_count):
 class EdgeConv(nn.Module):
     def __init__(self, in_channels, out_channels, activation: Optional[str]='ReLU'):
         super().__init__()
-        
+
         if activation == 'ReLU':
             self.mlp = nn.Sequential(
                 nn.Linear(2 * in_channels, out_channels),
@@ -62,7 +62,7 @@ class EdgeConv(nn.Module):
             self.lin = nn.Linear(in_channels, out_channels)
         else:
             raise Exception("Please assign valid activation to MLP!")
-    
+
     def execute(self, x, edge_index, neighbors_per_node=None):
         """
         x: (N, C)
@@ -70,15 +70,15 @@ class EdgeConv(nn.Module):
         """
         src = edge_index[0]  # (E,)
         dst = edge_index[1]  # (E,)
-        
+
         # gather
         x_i = x[dst]  # (E, C)
         x_j = x[src]  # (E, C)
-        
+
         # message
         tmp = jt.concat([x_i, x_j - x_i], dim=1)  # (E, 2C)
         msg = self.mlp(tmp)  # (E, out_channels)
-        
+
         N = x.shape[0]
         if neighbors_per_node is None:
             out = jt.full((N, msg.shape[1]), 0)
@@ -112,7 +112,7 @@ class EdgeConv(nn.Module):
 class DynamicEdgeConv(EdgeConv):
     def __init__(self, in_channels, out_channels, activation: Optional[str]='ReLU'):
         super().__init__(in_channels, out_channels, activation)
-    
+
     def execute(self, x, edge_index, neighbors_per_node=None):
         return super().execute(x, edge_index, neighbors_per_node)
 
@@ -455,20 +455,20 @@ class FeatureExtraction(nn.Module):
         knn_idx = knn_idx[:, :, 1:]
         base = jt.arange(B) * N  # (B,)
         base = base.reshape(B, 1, 1)
-        
+
         knn_idx = knn_idx + base  # (B, N, k)
-        
+
         dst = jt.arange(N)
         dst = dst.reshape(1, N, 1).broadcast((B, N, k))
         dst = dst + base
-        
+
         src = knn_idx.reshape(-1)
         dst = dst.reshape(-1)
-        
+
         edge_index = jt.stack([src, dst], dim=0)  # (2, E)
-        
+
         return edge_index
-    
+
     def normalize_patch(self, pcl):
         scale = jt.sqrt(
             _deterministic_sum(pcl ** 2, dim=-1, keepdims=True)
@@ -495,11 +495,11 @@ class FeatureExtraction(nn.Module):
             + 1e-12
         )
         return d / (r + 1e-8)                                 # (B,1) dimensionless
-    
+
     def execute(self, x, condition=None):
         # x: (B, N, C)
         B, N, _ = x.shape
-        
+
         if self.distance_estimation:
             x = self.normalize_patch(x)
 
@@ -556,7 +556,7 @@ class FeatureExtraction(nn.Module):
         return x3
 
 class Decoder(nn.Module):
-    
+
     def __init__(self, z_dim, dim, out_dim, hidden_size, scalar_reduce=True):
         super().__init__()
         self.z_dim = z_dim
@@ -567,15 +567,15 @@ class Decoder(nn.Module):
         c_dim = z_dim
         self.lin_1 = nn.Linear(c_dim, c_dim)
         self.bn_1_out = nn.BatchNorm1d(c_dim)
-        
+
         self.lin_2 = nn.Linear(c_dim, hidden_size)
         self.bn_2_out = nn.BatchNorm1d(hidden_size)
-        
+
         self.lin_3 = nn.Linear(hidden_size, out_dim)
-        
+
         self.actvn_out = nn.ReLU()
         self.dropout = nn.Dropout(0.1)
-    
+
     def execute(self, c, B=None, N=None):
         """
         c: (B*N, F)
@@ -584,12 +584,12 @@ class Decoder(nn.Module):
         net = self.bn_1_out(net)
         net = self.actvn_out(net)
         net = self.dropout(net)
-        
+
         net = self.lin_2(net)
         net = self.bn_2_out(net)
         net = self.actvn_out(net)
         net = self.dropout(net)
-        
+
         if self.out_dim == 1:
             net = net.reshape(B, N, -1)
             if self.scalar_reduce:
