@@ -19,7 +19,14 @@ if [ ! -d "$WHEEL_ROOT" ]; then
     printf 'error: wheel directory not found: %s\n' "$WHEEL_ROOT" >&2
     exit 1
 fi
-chown -R "$(id -u):$(id -g)" "$JITTOR_ROOT"
+if ! actual_jittor_root=$(git -c safe.directory="$JITTOR_ROOT" -C "$JITTOR_ROOT" rev-parse --show-toplevel); then
+    printf 'error: unable to read Jittor repository root from %s\n' "$JITTOR_ROOT" >&2
+    exit 1
+fi
+if [ "$actual_jittor_root" != "$JITTOR_ROOT" ]; then
+    printf 'error: Jittor repository root is %s; expected %s\n' "$actual_jittor_root" "$JITTOR_ROOT" >&2
+    exit 1
+fi
 if ! actual_jittor_sha=$(git -c safe.directory="$JITTOR_ROOT" -C "$JITTOR_ROOT" rev-parse HEAD); then
     printf 'error: unable to read Jittor revision from %s\n' "$JITTOR_ROOT" >&2
     exit 1
@@ -36,6 +43,7 @@ if [ -n "$jittor_status" ]; then
     printf 'error: Jittor working tree is not clean: %s\n' "$JITTOR_ROOT" >&2
     exit 1
 fi
+chown -R "$(id -u):$(id -g)" "$JITTOR_ROOT"
 mkdir -p /data/ldc/envs /data/ldc/cache/jittor-track2-ascend
 if [ ! -x "$ENV_ROOT/bin/python" ]; then
     python3.11 -m venv --system-site-packages "$ENV_ROOT"

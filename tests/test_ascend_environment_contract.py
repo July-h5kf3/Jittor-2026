@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -68,7 +69,8 @@ class AscendEnvironmentContractTests(unittest.TestCase):
                     "bash",
                     "-c",
                     'set -o nounset; source "$1"; '
-                    'printf "%s|%s|%s\\n" "$JITTOR_HOME" "$NKAI_JITTOR_COMMIT" "$FAKE_CANN_READY"',
+                    'printf "%s|%s|%s|%s\\n" "$JITTOR_HOME" "$NKAI_JITTOR_COMMIT" '
+                    '"$FAKE_CANN_READY" "$python_config_path"',
                     "bash",
                     str(activation),
                 ],
@@ -78,7 +80,8 @@ class AscendEnvironmentContractTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(
                 result.stdout,
-                f"/data/ldc/cache/jittor-track2-ascend|{SHA}|1\n",
+                f"/data/ldc/cache/jittor-track2-ascend|{SHA}|1|"
+                "/usr/local/python3.11.15/bin/python3.11-config\n",
             )
 
     def test_remote_setup_is_offline(self):
@@ -109,16 +112,55 @@ class AscendEnvironmentContractTests(unittest.TestCase):
         text = (ROOT / "scripts/setup_ascend_env.sh").read_text(encoding="utf-8")
         self.assertEqual(
             text.count('git -c safe.directory="$JITTOR_ROOT" -C "$JITTOR_ROOT"'),
-            2,
+            3,
         )
         self.assertNotIn("git config --global", text)
 
-    def test_remote_setup_normalizes_jittor_checkout_ownership_before_git_checks(self):
+    def test_remote_setup_validates_checkout_before_normalizing_ownership(self):
         text = (ROOT / "scripts/setup_ascend_env.sh").read_text(encoding="utf-8")
         ownership = 'chown -R "$(id -u):$(id -g)" "$JITTOR_ROOT"'
+        root_check = (
+            'git -c safe.directory="$JITTOR_ROOT" -C "$JITTOR_ROOT" '
+            "rev-parse --show-toplevel"
+        )
         git_check = 'git -c safe.directory="$JITTOR_ROOT" -C "$JITTOR_ROOT" rev-parse HEAD'
         self.assertIn(ownership, text)
-        self.assertLess(text.index(ownership), text.index(git_check))
+        self.assertIn(root_check, text)
+        self.assertGreater(text.index(ownership), text.index(root_check))
+        self.assertGreater(text.index(ownership), text.index(git_check))
+        self.assertGreater(
+            text.index(ownership), text.index("Jittor working tree is not clean")
+        )
+
+    def test_nested_git_checkout_is_rejected_without_chown(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            repository = temp / "repository"
+            jittor_root = repository / "jittor"
+            jittor_root.mkdir(parents=True)
+            (jittor_root / "setup.py").write_text("# fixture\n", encoding="utf-8")
+            self._git(repository, "init")
+            self._git(repository, "add", "jittor/setup.py")
+            self._git(
+                repository,
+                "-c",
+                "user.email=test@example.invalid",
+                "-c",
+                "user.name=Test",
+                "commit",
+                "-m",
+                "fixture",
+            )
+            matching_sha = self._git(repository, "rev-parse", "HEAD").stdout.strip()
+            marker = temp / "chown-called"
+
+            result = self._run_setup_validation(
+                temp, jittor_root, matching_sha, chown_marker=marker
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Jittor repository root is", result.stderr)
+            self.assertFalse(marker.exists())
 
     def test_jittor_source_validation_accepts_only_clean_matching_revision(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -139,29 +181,43 @@ class AscendEnvironmentContractTests(unittest.TestCase):
                 "fixture",
             )
             matching_sha = self._git(jittor_root, "rev-parse", "HEAD").stdout.strip()
+            marker = temp / "chown-called"
 
             with self.subTest("clean matching revision"):
-                result = self._run_setup_validation(temp, jittor_root, matching_sha)
+                result = self._run_setup_validation(
+                    temp, jittor_root, matching_sha, chown_marker=marker
+                )
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout, "validation-passed\n")
+                self.assertTrue(marker.exists())
+                marker.unlink()
 
             with self.subTest("wrong revision"):
-                result = self._run_setup_validation(temp, jittor_root, "0" * 40)
+                result = self._run_setup_validation(
+                    temp, jittor_root, "0" * 40, chown_marker=marker
+                )
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("Jittor revision is", result.stderr)
+                self.assertFalse(marker.exists())
 
             with self.subTest("tracked changes"):
                 (jittor_root / "setup.py").write_text("# modified\n", encoding="utf-8")
-                result = self._run_setup_validation(temp, jittor_root, matching_sha)
+                result = self._run_setup_validation(
+                    temp, jittor_root, matching_sha, chown_marker=marker
+                )
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("working tree is not clean", result.stderr)
+                self.assertFalse(marker.exists())
                 self._git(jittor_root, "checkout", "--", "setup.py")
 
             with self.subTest("untracked changes"):
                 (jittor_root / "local.patch").write_text("patch\n", encoding="utf-8")
-                result = self._run_setup_validation(temp, jittor_root, matching_sha)
+                result = self._run_setup_validation(
+                    temp, jittor_root, matching_sha, chown_marker=marker
+                )
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("working tree is not clean", result.stderr)
+                self.assertFalse(marker.exists())
 
     def _activation_copy(self, temp: Path, cann_root: Path) -> Path:
         text = (ROOT / "scripts/ascend_env.sh").read_text(encoding="utf-8")
@@ -171,7 +227,11 @@ class AscendEnvironmentContractTests(unittest.TestCase):
         return activation
 
     def _run_setup_validation(
-        self, temp: Path, jittor_root: Path, expected_sha: str
+        self,
+        temp: Path,
+        jittor_root: Path,
+        expected_sha: str,
+        chown_marker=None,
     ) -> subprocess.CompletedProcess[str]:
         project_root = temp / "project"
         wheel_root = temp / "wheels"
@@ -184,14 +244,33 @@ class AscendEnvironmentContractTests(unittest.TestCase):
         text = text.replace("/data/ldc/envs/track2-ascend", str(env_root))
         text = text.replace("/data/ldc/packages/track2-ascend", str(wheel_root))
         text = text.replace(f"JITTOR_SHA={SHA}", f"JITTOR_SHA={expected_sha}")
-        text = text.replace(f"/data/ldc/vendor/jittor-{SHA}", str(jittor_root))
+        text = text.replace(
+            f"/data/ldc/vendor/jittor-{SHA}", str(jittor_root.resolve())
+        )
         text = text.replace(
             "mkdir -p /data/ldc/envs /data/ldc/cache/jittor-track2-ascend",
             "printf 'validation-passed\\n'\nexit 0",
         )
         script = temp / "setup_validation.sh"
         script.write_text(text, encoding="utf-8")
-        return subprocess.run(["bash", str(script)], text=True, capture_output=True)
+        environment = os.environ.copy()
+        if chown_marker is not None:
+            fake_bin = temp / "fake-bin"
+            fake_bin.mkdir(exist_ok=True)
+            fake_chown = fake_bin / "chown"
+            fake_chown.write_text(
+                '#!/usr/bin/env bash\nprintf "called\\n" > "$FAKE_CHOWN_MARKER"\n',
+                encoding="utf-8",
+            )
+            fake_chown.chmod(0o755)
+            environment["FAKE_CHOWN_MARKER"] = str(chown_marker)
+            environment["PATH"] = f"{fake_bin}:{environment['PATH']}"
+        return subprocess.run(
+            ["bash", str(script)],
+            text=True,
+            capture_output=True,
+            env=environment,
+        )
 
     def _git(self, cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(

@@ -225,6 +225,53 @@ class BackendTests(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "expected 8 reference gradients"):
                 smoke.main(["--device", "acl"])
 
+    def test_acl_smoke_requires_all_eight_candidate_gradients(self):
+        smoke = load_smoke_module()
+        jt = FakeJittor(has_cuda=True, has_acl=True)
+
+        class Parameter:
+            def __init__(self, size):
+                self.size = size
+
+            def numel(self):
+                return self.size
+
+        class Model:
+            def state_dict(self):
+                return {
+                    str(index): Parameter(16278412 if index == 0 else 0)
+                    for index in range(1280)
+                }
+
+        models = types.ModuleType("plr3d.models")
+        models.DenoiseNet = Model
+        ops = types.ModuleType("plr3d.ops")
+        ops.__path__ = []
+        selective_scan = types.ModuleType("plr3d.ops.selective_scan")
+        selective_scan.selective_scan = lambda *values: values[0]
+        selective_scan.selective_scan_reference = lambda *values: values[0]
+        output = np.array([1.0])
+        gradient = np.array([1.0])
+
+        with mock.patch.dict(
+            sys.modules,
+            {
+                "jittor": jt,
+                "plr3d.models": models,
+                "plr3d.ops": ops,
+                "plr3d.ops.selective_scan": selective_scan,
+            },
+        ), mock.patch.object(
+            smoke,
+            "run_scan",
+            side_effect=[
+                (output, [gradient] * 8),
+                (output, [gradient] * 7),
+            ],
+        ), mock.patch("sys.stdout", io.StringIO()):
+            with self.assertRaisesRegex(AssertionError, "expected 8 candidate gradients"):
+                smoke.main(["--device", "acl"])
+
     def test_acl_smoke_asserts_acl_is_enabled_after_scanning(self):
         smoke = load_smoke_module()
         jt = FakeJittor(has_cuda=True, has_acl=True)
