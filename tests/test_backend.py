@@ -1,5 +1,12 @@
 import argparse
+import io
+import json
+import sys
 import unittest
+from unittest import mock
+
+import main
+from main import parse_args
 
 
 class Flags:
@@ -71,6 +78,54 @@ class SparseJittor:
 
 
 class BackendTests(unittest.TestCase):
+    def test_doctor_parser_accepts_acl_device(self):
+        self.assertEqual(parse_args(["doctor", "--device", "acl"]).device, "acl")
+
+    def test_main_only_prepares_cuda_layout_for_cuda_doctor(self):
+        with mock.patch("main.prepare_conda_cuda_layout") as prepare, mock.patch(
+            "main.doctor", return_value=0
+        ) as run_doctor:
+            self.assertEqual(main.main(["doctor", "--device", "acl"]), 0)
+
+        prepare.assert_not_called()
+        run_doctor.assert_called_once_with("acl", False)
+
+        with mock.patch("main.prepare_conda_cuda_layout") as prepare, mock.patch(
+            "main.doctor", return_value=0
+        ) as run_doctor:
+            self.assertEqual(main.main(["doctor", "--device", "cuda"]), 0)
+
+        prepare.assert_called_once_with()
+        run_doctor.assert_called_once_with("cuda", False)
+
+    def test_deep_doctor_configures_selected_device_and_passes_it_to_smoke(self):
+        jt = FakeJittor()
+        jt.__version__ = "1.3.11"
+        np = type("Numpy", (), {"__version__": "2.0.0"})()
+        output = io.StringIO()
+
+        with mock.patch.dict(sys.modules, {"jittor": jt, "numpy": np}), mock.patch(
+            "main.run_command"
+        ) as run_smoke, mock.patch("sys.stdout", output), mock.patch.object(
+            main.sys, "version_info", (3, 10, 0)
+        ):
+            self.assertEqual(main.doctor("acl", deep=True), 0)
+
+        report = json.loads(output.getvalue())
+        self.assertEqual(report["device"], "acl")
+        self.assertEqual(report["device_status"]["device"], "acl")
+        self.assertEqual(jt.flags.use_acl, 1)
+        self.assertEqual(jt.flags.use_cuda, 0)
+        run_smoke.assert_called_once_with(
+            [
+                sys.executable,
+                str(main.ROOT / "tests" / "smoke_jittor.py"),
+                "--device",
+                "acl",
+            ],
+            main.ROOT,
+        )
+
     def test_add_device_argument_uses_cuda_default_and_supported_choices(self):
         from plr3d.backend import DEVICES, add_device_argument
 

@@ -12,6 +12,8 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
+from plr3d.backend import add_device_argument, configure_device, device_status
+
 
 ROOT = Path(__file__).resolve().parent
 
@@ -66,12 +68,15 @@ def run_command(command: List[str], cwd: Path, log_path: Optional[Path] = None) 
         raise RuntimeError(f"stage failed with code {process.returncode}; see {log_path}")
 
 
-def doctor(deep: bool) -> int:
+def doctor(device: str, deep: bool) -> int:
     import jittor as jt
+
+    configure_device(device, jt)
     import numpy as np
 
     python_version = tuple(sys.version_info[:3])
     jittor_version = tuple(int(item) for item in jt.__version__.split(".")[:3])
+    status = device_status(device, jt)
     checks = {
         "os": platform.platform(),
         "python": platform.python_version(),
@@ -81,12 +86,22 @@ def doctor(deep: bool) -> int:
         "numpy": np.__version__,
         "cuda_available": bool(jt.compiler.has_cuda),
         "nvcc_path": str(getattr(jt.compiler, "nvcc_path", "")),
+        "device_status": status,
     }
+    checks.update(status)
     print(json.dumps(checks, indent=2, sort_keys=True))
     if not checks["python_3_10_or_newer"] or not checks["jittor_1_3_10_or_newer"]:
         return 2
     if deep:
-        run_command([sys.executable, str(ROOT / "tests" / "smoke_jittor.py")], ROOT)
+        run_command(
+            [
+                sys.executable,
+                str(ROOT / "tests" / "smoke_jittor.py"),
+                "--device",
+                device,
+            ],
+            ROOT,
+        )
     return 0
 
 
@@ -140,6 +155,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     doctor_parser = subparsers.add_parser("doctor", help="check the Jittor environment")
+    add_device_argument(doctor_parser)
     doctor_parser.add_argument("--deep", action="store_true", help="run CUDA forward/backward smoke")
 
     for name in ENTRYPOINTS:
@@ -154,10 +170,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    prepare_conda_cuda_layout()
     args = parse_args(argv)
     if args.command == "doctor":
-        return doctor(args.deep)
+        if args.device == "cuda":
+            prepare_conda_cuda_layout()
+        return doctor(args.device, args.deep)
+    prepare_conda_cuda_layout()
     if args.command == "pipeline":
         return run_pipeline(args.config.resolve(), args.log_dir.resolve(), args.dry_run)
     arguments = list(args.arguments)
