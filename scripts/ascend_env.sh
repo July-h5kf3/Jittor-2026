@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-set -euo pipefail
 
 export ASCEND_TOOLKIT_HOME=/usr/local/Ascend/cann-9.1.0-beta.1
+if [ ! -f "$ASCEND_TOOLKIT_HOME/set_env.sh" ]; then
+    printf 'error: CANN environment script not found: %s\n' "$ASCEND_TOOLKIT_HOME/set_env.sh" >&2
+    return 1 2>/dev/null || exit 1
+fi
 source "$ASCEND_TOOLKIT_HOME/set_env.sh"
 export tikcc_path="$ASCEND_TOOLKIT_HOME/bin/ccec"
 export JITTOR_HOME=/data/ldc/cache/jittor-track2-ascend

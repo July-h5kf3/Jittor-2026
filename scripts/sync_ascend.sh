@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT=$(git rev-parse --show-toplevel)
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 test "$(git -C "$ROOT" branch --show-current)" = new
 rsync -az --delete \
     --exclude '.git' \

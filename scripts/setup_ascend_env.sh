@@ -10,10 +10,27 @@ JITTOR_ROOT=/data/ldc/vendor/jittor-06f5d3d271555682c95aa3505518f47eeab2bd9c
 test -f "$PROJECT_ROOT/requirements-ascend.txt"
 test -f "$JITTOR_ROOT/setup.py"
 test -d "$WHEEL_ROOT"
+if ! actual_jittor_sha=$(git -C "$JITTOR_ROOT" rev-parse HEAD); then
+    printf 'error: unable to read Jittor revision from %s\n' "$JITTOR_ROOT" >&2
+    exit 1
+fi
+if [ "$actual_jittor_sha" != "$JITTOR_SHA" ]; then
+    printf 'error: Jittor revision is %s; expected %s\n' "$actual_jittor_sha" "$JITTOR_SHA" >&2
+    exit 1
+fi
 mkdir -p /data/ldc/envs /data/ldc/cache/jittor-track2-ascend
 if [ ! -x "$ENV_ROOT/bin/python" ]; then
-    python -m venv --system-site-packages "$ENV_ROOT"
+    python3.11 -m venv --system-site-packages "$ENV_ROOT"
 fi
+"$ENV_ROOT/bin/python" - <<'PY'
+import platform
+import sys
+
+if sys.version_info[:2] != (3, 11):
+    raise SystemExit(f"error: expected Python 3.11, got {sys.version}")
+if platform.machine().lower() != "aarch64":
+    raise SystemExit(f"error: expected aarch64, got {platform.machine()}")
+PY
 "$ENV_ROOT/bin/python" -m pip install \
     --no-index --find-links "$WHEEL_ROOT" \
     -r "$PROJECT_ROOT/requirements-ascend.txt"
