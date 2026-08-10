@@ -646,8 +646,11 @@ git commit -m "feat: complete single-NPU Ascend correctness smoke"
   included those running buffers in `jt.grad`.
 - The focused regression requires gradients only for the model input and
   `feature_nets.0.linear3.weight`; SGD updates that same real trainable weight.
-  This is a minimal ACL composition change—no vendor change, `.numpy()`/`.item()`
-  transfer, or CPU fallback was added to model forward/backward.
+  The smoke asserts each gradient independently: both the input gradient and
+  training-weight gradient must be finite and contain at least one nonzero
+  value. This is a minimal ACL composition change—no vendor change,
+  `.numpy()`/`.item()` transfer, or CPU fallback was added to model
+  forward/backward.
 - A separate checkpoint investigation showed exact state-dict reload but unstable
   repeated `(1, 8, 3)` eval forward: root and BatchNorm were both in eval,
   state did not change, KNN and Conv1 stayed bitwise stable, while Mamba had a
@@ -666,6 +669,14 @@ git commit -m "feat: complete single-NPU Ascend correctness smoke"
   elapsed 3.953960 and 3.936256 seconds, Jittor
   `06f5d3d271555682c95aa3505518f47eeab2bd9c`, CANN 9.1, `use_acl=true`, and
   rank/world-size `0/1` (`use_cuda=true` is the documented official alias).
+- A later full-suite-only BatchNorm running-variance failure was traced to ACL
+  asynchronous mutable-state setup: isolated fresh-process runs passed, while
+  the full primitive matrix could enter the training forward before its
+  `running_mean`/`running_var` assignments were visible. The test now performs
+  `jt.sync_all()` after `training_batchnorm.train()` to establish that boundary.
+  The final post-commit remote matrix again ran 6/6 and the deep doctor printed
+  `JITTOR_SMOKE_OK 320 4069603` with `checkpoint_roundtrip: true` in
+  3.897167 seconds.
 - This completes single-NPU correctness only. ACL selective-scan performance
   work and HCCL/multi-card execution remain deferred to Milestones B/C.
 

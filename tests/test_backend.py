@@ -145,6 +145,25 @@ class BackendTests(unittest.TestCase):
 
         self.assertIn("rtol=1e-3, atol=5e-5", source)
 
+    def test_reduced_model_checks_input_and_weight_gradients_independently(self):
+        smoke = load_smoke_module()
+        source = pathlib.Path(smoke.__file__).read_text(encoding="utf-8")
+
+        self.assertIn("input_gradient, weight_gradient = gradient_arrays", source)
+        self.assertIn("reduced model input gradient is not finite", source)
+        self.assertIn("reduced model training-weight gradient is not finite", source)
+        self.assertIn("reduced model input gradient is zero", source)
+        self.assertIn("reduced model training-weight gradient is zero", source)
+
+    def test_acl_batchnorm_smoke_synchronizes_mutable_running_state_setup(self):
+        source = (ROOT / "tests" / "test_acl_primitives.py").read_text(encoding="utf-8")
+        train_index = source.index("training_batchnorm.train()")
+        sync_index = source.index("jt.sync_all()", train_index)
+        output_index = source.index("training_output = training_batchnorm", train_index)
+
+        self.assertLess(train_index, sync_index)
+        self.assertLess(sync_index, output_index)
+
     def test_selective_scan_prefers_reference_when_acl_and_cuda_are_enabled(self):
         jittor = types.ModuleType("jittor")
         jittor.Var = object

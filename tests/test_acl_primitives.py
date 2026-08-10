@@ -157,6 +157,7 @@ class ACLPrimitiveCompatibilityTests(unittest.TestCase):
         training_batchnorm.running_mean.assign(jt.array(initial_running_mean_np))
         training_batchnorm.running_var.assign(jt.array(initial_running_var_np))
         training_batchnorm.train()
+        jt.sync_all()
         training_input = jt.array(values_np)
         training_output = training_batchnorm(training_input)
         training_gradient = jt.grad((training_output ** 2).sum(), training_input)

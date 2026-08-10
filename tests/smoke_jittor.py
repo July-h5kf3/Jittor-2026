@@ -92,10 +92,15 @@ def run_acl_model_acceptance(model, model_type, jt_module):
     if len(gradients) != len(gradient_targets):
         raise AssertionError("reduced model returned an incomplete gradient list")
     gradient_arrays = [gradient.numpy() for gradient in gradients]
-    if not all(np.isfinite(gradient).all() for gradient in gradient_arrays):
-        raise AssertionError("reduced model gradient is not finite")
-    if not any(np.any(gradient != 0.0) for gradient in gradient_arrays):
-        raise AssertionError("reduced model gradients are all zero")
+    input_gradient, weight_gradient = gradient_arrays
+    if not np.isfinite(input_gradient).all():
+        raise AssertionError("reduced model input gradient is not finite")
+    if not np.isfinite(weight_gradient).all():
+        raise AssertionError("reduced model training-weight gradient is not finite")
+    if not np.any(np.abs(input_gradient) > 0.0):
+        raise AssertionError("reduced model input gradient is zero")
+    if not np.any(np.abs(weight_gradient) > 0.0):
+        raise AssertionError("reduced model training-weight gradient is zero")
 
     before = {
         name: value.numpy().copy() for name, value in model.state_dict().items()
