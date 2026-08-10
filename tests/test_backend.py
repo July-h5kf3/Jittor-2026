@@ -1,12 +1,17 @@
 import argparse
+import ast
 import io
 import json
+import pathlib
 import sys
 import unittest
 from unittest import mock
 
 import main
 from main import parse_args
+
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class Flags:
@@ -78,6 +83,65 @@ class SparseJittor:
 
 
 class BackendTests(unittest.TestCase):
+    def test_smoke_cli_wires_shared_device_configuration_before_model_creation(self):
+        tree = ast.parse((ROOT / "tests" / "smoke_jittor.py").read_text(encoding="utf-8"))
+        functions = {
+            node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)
+        }
+
+        parse = functions["parse_args"]
+        self.assertEqual([argument.arg for argument in parse.args.args], ["argv"])
+        self.assertTrue(
+            any(
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "add_device_argument"
+                and len(node.args) == 1
+                and isinstance(node.args[0], ast.Name)
+                and node.args[0].id == "parser"
+                for node in ast.walk(parse)
+            )
+        )
+        self.assertTrue(
+            any(
+                isinstance(node, ast.Return)
+                and isinstance(node.value, ast.Call)
+                and isinstance(node.value.func, ast.Attribute)
+                and node.value.func.attr == "parse_args"
+                and len(node.value.args) == 1
+                and isinstance(node.value.args[0], ast.Name)
+                and node.value.args[0].id == "argv"
+                for node in ast.walk(parse)
+            )
+        )
+
+        smoke_main = functions["main"]
+        self.assertEqual([argument.arg for argument in smoke_main.args.args], ["argv"])
+        configure_index = next(
+            index
+            for index, statement in enumerate(smoke_main.body)
+            if isinstance(statement, ast.Expr)
+            and isinstance(statement.value, ast.Call)
+            and isinstance(statement.value.func, ast.Name)
+            and statement.value.func.id == "configure_device"
+            and len(statement.value.args) == 2
+            and isinstance(statement.value.args[0], ast.Attribute)
+            and isinstance(statement.value.args[0].value, ast.Name)
+            and statement.value.args[0].value.id == "args"
+            and statement.value.args[0].attr == "device"
+            and isinstance(statement.value.args[1], ast.Name)
+            and statement.value.args[1].id == "jt"
+        )
+        model_index = next(
+            index
+            for index, statement in enumerate(smoke_main.body)
+            if isinstance(statement, ast.Assign)
+            and isinstance(statement.value, ast.Call)
+            and isinstance(statement.value.func, ast.Name)
+            and statement.value.func.id == "DenoiseNet"
+        )
+        self.assertLess(configure_index, model_index)
+
     def test_doctor_parser_accepts_acl_device(self):
         self.assertEqual(parse_args(["doctor", "--device", "acl"]).device, "acl")
 

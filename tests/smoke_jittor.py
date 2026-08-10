@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Small Jittor model/operator smoke test; no external data or weights required."""
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -10,8 +11,15 @@ import jittor as jt
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))
+from plr3d.backend import add_device_argument, configure_device
 from plr3d.models import DenoiseNet
 from plr3d.ops.selective_scan import selective_scan, selective_scan_reference
+
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    add_device_argument(parser)
+    return parser.parse_args(argv)
 
 
 def scan_inputs(seed=7):
@@ -39,8 +47,9 @@ def run_scan(arrays, use_cuda, custom):
     return output.numpy(), [gradient.numpy() for gradient in gradients]
 
 
-def main():
-    jt.flags.use_cuda = 0
+def main(argv=None):
+    args = parse_args(argv)
+    configure_device(args.device, jt)
     model = DenoiseNet()
     state = model.state_dict()
     assert len(state) == 1280, len(state)
