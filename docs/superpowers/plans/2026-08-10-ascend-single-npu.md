@@ -512,7 +512,7 @@ git commit -m "feat: add ACL selective scan reference path"
 - Create: `tests/test_acl_primitives.py`
 - Modify only when a focused failure proves it necessary: `plr3d/ops/geometry.py`, `rot_jittor/src/model/feature.py`, or the smallest affected model file
 
-- [ ] **Step 1: Write focused primitive tests**
+- [x] **Step 1: Write focused primitive tests**
 
 Create a unittest class skipped unless `jt.compiler.has_acl` is true. Its `setUpClass` sets `jt.flags.use_acl=1`. Add independent tests named:
 
@@ -527,7 +527,7 @@ test_optimizer_step_and_checkpoint_roundtrip
 
 Use fixed float32 inputs. Compare small outputs with NumPy or a CPU-Jittor reference. Use `rtol=1e-4, atol=1e-5` unless the pinned Jittor ACL test for the same operator documents a looser tolerance. The checkpoint test uses `tempfile.TemporaryDirectory`.
 
-- [ ] **Step 2: Run the matrix and stop at the first unsupported operation**
+- [x] **Step 2: Run the matrix and stop at the first unsupported operation**
 
 Run remotely:
 
@@ -537,7 +537,7 @@ python -m unittest -v tests.test_acl_primitives
 
 Expected: supported primitives pass. If one fails, record its operator, dtype, shape, Jittor log, and CANN error before changing code.
 
-- [ ] **Step 3: Apply systematic debugging to each failure**
+- [x] **Step 3: Apply systematic debugging to each failure**
 
 For one failure at a time:
 
@@ -548,7 +548,7 @@ For one failure at a time:
 5. implement the smallest Jittor composition that remains on ACL;
 6. reject `.numpy()` and `.item()` inside formal forward/backward paths.
 
-- [ ] **Step 4: Verify the complete matrix and commit**
+- [x] **Step 4: Verify the complete matrix and commit**
 
 Expected: all six tests pass on one Ascend 910 without an unintended CPU fallback.
 
@@ -558,6 +558,12 @@ Commit only the files actually required:
 git add tests/test_acl_primitives.py plr3d rot_jittor
 git commit -m "test: validate PLR primitives on Jittor ACL"
 ```
+
+### Task 6 Verification Evidence — 2026-08-10
+
+- `python -m unittest -v tests.test_acl_primitives` ran 6/6 tests successfully in the activated one-NPU runtime: Jittor `06f5d3d271555682c95aa3505518f47eeab2bd9c`, CANN 9.1, and `has_acl=1`. Every test asserts `use_acl==1` at its beginning and end; the fixed Jittor runtime reports `(use_acl, use_cuda)=(1,1)` after ACL selection.
+- The matrix covers float32 MatMul/BMM plus a gradient, Linear/Conv1d/depthwise Conv1d, BatchNorm eval/LayerNorm/ReLU/SiLU, project gather/scatter/ArgMax/top-k, coordinate and feature KNN, and an SGD forward/backward/update/checkpoint round trip. Numerical comparisons use NumPy references at `rtol=1e-4`, `atol=1e-5`.
+- Compatibility repair required: ACL does not support the project’s flattened advanced `Index` gather or CUDA-only `jt.misc.knn`. `plr3d/ops/geometry.py` now uses the pinned vendor’s ACL `jt.gather` path and computes coordinate KNN with the existing ACL-safe pairwise squared-distance/top-k composition. No CPU fallback or vendor source change was used.
 
 ## Task 7: Single-NPU Model and Training Smoke
 
