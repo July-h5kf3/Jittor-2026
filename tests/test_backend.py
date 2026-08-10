@@ -28,6 +28,17 @@ def load_smoke_module():
     return module
 
 
+def load_selective_scan_module(jittor_module):
+    source = ROOT / "plr3d" / "ops" / "selective_scan.py"
+    specification = importlib.util.spec_from_file_location(
+        "selective_scan_for_test", source
+    )
+    module = importlib.util.module_from_spec(specification)
+    with mock.patch.dict(sys.modules, {"jittor": jittor_module}):
+        specification.loader.exec_module(module)
+    return module
+
+
 class Flags:
     def __init__(self):
         self.use_cuda = 0
@@ -97,6 +108,36 @@ class SparseJittor:
 
 
 class BackendTests(unittest.TestCase):
+    def test_selective_scan_prefers_reference_when_acl_and_cuda_are_enabled(self):
+        jittor = types.ModuleType("jittor")
+        jittor.Var = object
+        jittor.Function = type("Function", (), {"apply": classmethod(lambda cls: None)})
+        jittor.flags = type("Flags", (), {"use_acl": 1, "use_cuda": 1})()
+        selective_scan_module = load_selective_scan_module(jittor)
+
+        class Value:
+            def contiguous(self):
+                return self
+
+        values = tuple(Value() for _ in range(8))
+        reference_result = object()
+
+        with mock.patch.object(
+            selective_scan_module, "_validate_inputs"
+        ) as validate, mock.patch.object(
+            selective_scan_module,
+            "selective_scan_reference",
+            return_value=reference_result,
+        ) as reference, mock.patch.object(
+            selective_scan_module._SelectiveScanCUDA, "apply"
+        ) as cuda_apply:
+            result = selective_scan_module.selective_scan(*values)
+
+        self.assertIs(result, reference_result)
+        validate.assert_called_once_with(*values)
+        reference.assert_called_once_with(*values)
+        cuda_apply.assert_not_called()
+
     def test_acl_smoke_never_selects_cuda_when_cuda_is_available(self):
         smoke = load_smoke_module()
         jt = FakeJittor(has_cuda=True, has_acl=True)
@@ -134,13 +175,145 @@ class BackendTests(unittest.TestCase):
         ), mock.patch.object(smoke, "scan_inputs", return_value=[object()]), mock.patch.object(
             smoke,
             "run_scan",
-            return_value=(np.array([1.0]), []),
+            return_value=(np.array([1.0]), [np.array([1.0])] * 8),
         ) as run_scan, mock.patch("sys.stdout", io.StringIO()):
             smoke.main(["--device", "acl"])
 
         devices = [call.args[1] for call in run_scan.call_args_list]
         self.assertEqual(devices, ["cpu", "acl"])
         self.assertNotIn("cuda", devices)
+
+    def test_acl_smoke_requires_all_eight_gradients(self):
+        smoke = load_smoke_module()
+        jt = FakeJittor(has_cuda=True, has_acl=True)
+
+        class Parameter:
+            def __init__(self, size):
+                self.size = size
+
+            def numel(self):
+                return self.size
+
+        class Model:
+            def state_dict(self):
+                return {
+                    str(index): Parameter(16278412 if index == 0 else 0)
+                    for index in range(1280)
+                }
+
+        models = types.ModuleType("plr3d.models")
+        models.DenoiseNet = Model
+        ops = types.ModuleType("plr3d.ops")
+        ops.__path__ = []
+        selective_scan = types.ModuleType("plr3d.ops.selective_scan")
+        selective_scan.selective_scan = lambda *values: values[0]
+        selective_scan.selective_scan_reference = lambda *values: values[0]
+
+        with mock.patch.dict(
+            sys.modules,
+            {
+                "jittor": jt,
+                "plr3d.models": models,
+                "plr3d.ops": ops,
+                "plr3d.ops.selective_scan": selective_scan,
+            },
+        ), mock.patch.object(
+            smoke,
+            "run_scan",
+            return_value=(np.array([1.0]), [np.array([1.0])] * 7),
+        ), mock.patch("sys.stdout", io.StringIO()):
+            with self.assertRaisesRegex(AssertionError, "expected 8 reference gradients"):
+                smoke.main(["--device", "acl"])
+
+    def test_acl_smoke_asserts_acl_is_enabled_after_scanning(self):
+        smoke = load_smoke_module()
+        jt = FakeJittor(has_cuda=True, has_acl=True)
+
+        class Parameter:
+            def __init__(self, size):
+                self.size = size
+
+            def numel(self):
+                return self.size
+
+        class Model:
+            def state_dict(self):
+                return {
+                    str(index): Parameter(16278412 if index == 0 else 0)
+                    for index in range(1280)
+                }
+
+        models = types.ModuleType("plr3d.models")
+        models.DenoiseNet = Model
+        ops = types.ModuleType("plr3d.ops")
+        ops.__path__ = []
+        selective_scan = types.ModuleType("plr3d.ops.selective_scan")
+        selective_scan.selective_scan = lambda *values: values[0]
+        selective_scan.selective_scan_reference = lambda *values: values[0]
+
+        with mock.patch.dict(
+            sys.modules,
+            {
+                "jittor": jt,
+                "plr3d.models": models,
+                "plr3d.ops": ops,
+                "plr3d.ops.selective_scan": selective_scan,
+            },
+        ), mock.patch.object(smoke, "configure_device"), mock.patch.object(
+            smoke,
+            "run_scan",
+            return_value=(np.array([1.0]), [np.array([1.0])] * 8),
+        ), mock.patch("sys.stdout", io.StringIO()):
+            with self.assertRaisesRegex(AssertionError, "ACL smoke must leave ACL enabled"):
+                smoke.main(["--device", "acl"])
+
+    def test_acl_smoke_accepts_jittor_acl_cuda_alias_flags(self):
+        smoke = load_smoke_module()
+        jt = FakeJittor(has_cuda=True, has_acl=True)
+
+        class Parameter:
+            def __init__(self, size):
+                self.size = size
+
+            def numel(self):
+                return self.size
+
+        class Model:
+            def state_dict(self):
+                return {
+                    str(index): Parameter(16278412 if index == 0 else 0)
+                    for index in range(1280)
+                }
+
+        models = types.ModuleType("plr3d.models")
+        models.DenoiseNet = Model
+        ops = types.ModuleType("plr3d.ops")
+        ops.__path__ = []
+        selective_scan = types.ModuleType("plr3d.ops.selective_scan")
+        selective_scan.selective_scan = lambda *values: values[0]
+        selective_scan.selective_scan_reference = lambda *values: values[0]
+
+        def configure_acl_with_cuda_alias(device, jittor):
+            self.assertEqual(device, "acl")
+            jittor.flags.use_acl = 1
+            jittor.flags.use_cuda = 1
+
+        with mock.patch.dict(
+            sys.modules,
+            {
+                "jittor": jt,
+                "plr3d.models": models,
+                "plr3d.ops": ops,
+                "plr3d.ops.selective_scan": selective_scan,
+            },
+        ), mock.patch.object(
+            smoke, "configure_device", side_effect=configure_acl_with_cuda_alias
+        ), mock.patch.object(
+            smoke,
+            "run_scan",
+            return_value=(np.array([1.0]), [np.array([1.0])] * 8),
+        ), mock.patch("sys.stdout", io.StringIO()):
+            smoke.main(["--device", "acl"])
 
     def test_scan_plan_switches_every_run_through_shared_backend(self):
         smoke = load_smoke_module()

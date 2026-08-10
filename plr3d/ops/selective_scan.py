@@ -441,6 +441,8 @@ def selective_scan(
 ) -> jt.Var:
     """Run the Mamba selective scan with SiLU gating and softplus delta."""
     _validate_inputs(u, delta, a, b_var, c_var, d_skip, z, delta_bias)
+    if bool(getattr(jt.flags, "use_acl", 0)):
+        return selective_scan_reference(u, delta, a, b_var, c_var, d_skip, z, delta_bias)
     if bool(jt.flags.use_cuda):
         return _SelectiveScanCUDA.apply(
             u.contiguous(),

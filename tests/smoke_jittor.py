@@ -76,6 +76,7 @@ def main(argv=None):
         selective_scan,
         selective_scan_reference,
     )
+    assert len(reference_grads) == 8, "expected 8 reference gradients"
     for candidate_device, candidate_custom in plan[1:]:
         candidate, candidate_grads = run_scan(
             arrays,
@@ -85,11 +86,16 @@ def main(argv=None):
             selective_scan,
             selective_scan_reference,
         )
+        assert len(candidate_grads) == 8, "expected 8 candidate gradients"
         np.testing.assert_allclose(candidate, reference, rtol=2e-5, atol=2e-6)
         for candidate_grad, reference_grad in zip(candidate_grads, reference_grads):
             np.testing.assert_allclose(
                 candidate_grad, reference_grad, rtol=2e-4, atol=2e-5
             )
+    if args.device == "acl":
+        # In the pinned Jittor source, compiler.py aliases use_acl to use_cuda.
+        # use_cuda is therefore an ACL internal device flag, not CUDA routing.
+        assert bool(jt.flags.use_acl), "ACL smoke must leave ACL enabled"
     print("JITTOR_SMOKE_OK", len(state), sum(value.numel() for value in state.values()))
 
 
