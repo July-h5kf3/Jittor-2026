@@ -83,6 +83,7 @@ def parse_args(argv=None):
 
 def main(argv=None):
     args = parse_args(argv)
+    STAGES.clear()
     prepared = [
         ("base", "train_base.txt", None),
         ("mbi009_650", "train_mbi009_650.txt", None),

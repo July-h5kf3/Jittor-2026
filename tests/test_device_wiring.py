@@ -88,6 +88,37 @@ class DeviceWiringTests(unittest.TestCase):
                 position = stage["args"].index("--device")
                 self.assertEqual(stage["args"][position + 1], "acl")
 
+    def test_reproduce_config_resets_state_between_main_calls(self):
+        script = ROOT / "tools" / "build_reproduce_config.py"
+        specification = importlib.util.spec_from_file_location(
+            "build_reproduce_config_reentrant_test", script
+        )
+        module = importlib.util.module_from_spec(specification)
+        specification.loader.exec_module(module)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = pathlib.Path(temporary_directory)
+            (temporary_root / "configs").mkdir()
+            generated_script = temporary_root / "tools" / script.name
+            with mock.patch.object(module, "Path", return_value=generated_script):
+                module.main(["--device", "acl"])
+                module.main([])
+
+            payload = json.loads(
+                (temporary_root / "configs" / "reproduce_full.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+
+        self.assertEqual(len(payload["stages"]), 39)
+        device_dependent = {"train", "infer", "train-rot", "generate-rot"}
+        for stage in payload["stages"]:
+            if stage["entrypoint"] not in device_dependent:
+                continue
+            with self.subTest(stage=stage["name"]):
+                position = stage["args"].index("--device")
+                self.assertEqual(stage["args"][position + 1], "cuda")
+
 
 if __name__ == "__main__":
     unittest.main()
