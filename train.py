@@ -15,6 +15,7 @@ import jittor as jt
 import numpy as np
 from jittor import optim
 
+from plr3d.backend import add_device_argument, configure_device
 from plr3d.data import PLRPatchDataset, read_keys
 from plr3d.io import (
     PLRError,
@@ -89,7 +90,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--expected-train-count", type=int)
     parser.add_argument("--expected-steps-per-epoch", type=int)
     parser.add_argument("--log-interval", type=int, default=50)
-    parser.add_argument("--device", choices=("cuda", "cpu"), default="cuda")
+    add_device_argument(parser)
     return parser.parse_args(argv)
 
 
@@ -108,7 +109,7 @@ def _barrier() -> None:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
-    jt.flags.use_cuda = 1 if args.device == "cuda" else 0
+    configure_device(args.device, jt)
     rank = int(getattr(jt, "rank", 0) or 0)
     world_size = int(getattr(jt, "world_size", 1) or 1)
     random.seed(args.seed + rank)

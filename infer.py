@@ -14,6 +14,7 @@ from typing import Optional, Sequence, Tuple
 import jittor as jt
 import numpy as np
 
+from plr3d.backend import add_device_argument, configure_device
 from plr3d.io import (
     PLRError,
     discover_clouds,
@@ -72,13 +73,13 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--noise-decay", type=float, default=4.0)
     parser.add_argument("--seed", type=int, default=2020)
     parser.add_argument("--input-cyclic-shift", type=int, default=0)
-    parser.add_argument("--device", choices=("cuda", "cpu"), default="cuda")
+    add_device_argument(parser)
     return parser.parse_args(argv)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
-    jt.flags.use_cuda = 1 if args.device == "cuda" else 0
+    configure_device(args.device, jt)
     random.seed(args.seed)
     np.random.seed(args.seed)
     jt.set_global_seed(args.seed)

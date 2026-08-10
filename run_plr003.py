@@ -8,6 +8,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+import jittor as jt
+
+from plr3d.backend import add_device_argument, configure_device
 from plr3d.io import PLRError, read_keys
 from plr3d.routing import AIRPLANE, SOFA, TABLE, TAIL_CATEGORIES
 
@@ -40,8 +43,9 @@ def main() -> int:
     parser.add_argument("--seed-k-alpha", type=int, default=20)
     parser.add_argument("--num-modules", type=int, default=4)
     parser.add_argument("--seed", type=int, default=2020)
-    parser.add_argument("--device", choices=("cuda", "cpu"), default="cuda")
+    add_device_argument(parser)
     args = parser.parse_args()
+    configure_device(args.device, jt)
 
     if args.work_root.exists() or args.output_root.exists() or args.manifest.exists():
         raise PLRError("work/output/manifest target already exists")

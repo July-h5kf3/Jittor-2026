@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Generate the checked-in resumable from-raw reproduction pipeline."""
 
+import argparse
 import json
 from pathlib import Path
 
@@ -20,7 +21,7 @@ def add(name, cmd, skip=None):
     STAGES.append(row)
 
 
-def train(spec):
+def train(spec, device):
     core = spec[:18]
     accumulation = spec[18] if len(spec) > 18 else 4
     name, base, data, prefix, epochs, samples, count, steps, smin, smax, gp, outliers, lo, hi, lr, dcd, seed, namespace = core
@@ -37,7 +38,7 @@ def train(spec):
         "--outlier-scale", 3, "--scale-min", lo, "--scale-max", hi,
         "--lr", lr, "--weight-decay", 0, "--grad-clip", 1,
         "--dcd-alpha", 100, "--dcd-n-lambda", 0.5, "--dcd-weight", dcd,
-        "--seed", seed, "--seed-namespace", namespace, "--device", "cuda",
+        "--seed", seed, "--seed-namespace", namespace, "--device", device,
         "--expected-train-count", count,
     ]
     if steps is not None:
@@ -59,20 +60,29 @@ def filter_list(name, categories, count):
     return output
 
 
-def infer(name, checkpoint, key_list, count):
+def infer(name, checkpoint, key_list, count, device):
     output = f"{W}/predictions/{name}"
     manifest = f"{W}/manifests/infer_{name}.json"
     add(
         f"infer_{name}",
         ["infer", "--checkpoint", checkpoint, "--input-root", TEST,
          "--key-list", key_list, "--expected-count", count,
-         "--output-root", output, "--manifest", manifest, "--device", "cuda"],
+         "--output-root", output, "--manifest", manifest, "--device", device],
         manifest,
     )
     return output
 
 
-def main():
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--device", choices=("cpu", "cuda", "acl"), default="cuda"
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
+    args = parse_args(argv)
     prepared = [
         ("base", "train_base.txt", None),
         ("mbi009_650", "train_mbi009_650.txt", None),
@@ -96,25 +106,25 @@ def main():
         add(f"prepare_{preset}", command, manifest)
 
     base = train(("base", None, "base", "base-random", 100, 4, 15733, None,
-                  .005, .02, .5, .02, .8, 1.2, 1e-4, 0, 2020, "base-item", 8))
+                  .005, .02, .5, .02, .8, 1.2, 1e-4, 0, 2020, "base-item", 8), args.device)
     mbi = train(("mbi009", base, "mbi009_650", "mbi009-ft-mix", 3, 4, 650, 163,
-                 .005, .02, .5, .02, .8, 1.2, 1e-5, 0, 20260814, "mbi009-item"))
+                 .005, .02, .5, .02, .8, 1.2, 1e-5, 0, 20260814, "mbi009-item"), args.device)
     dcd = train(("dcd001", mbi, "dcd001_3000", "dcd001-freq-dcd", 2, 1, 3000, 188,
-                 .005, .02, .5, .02, .8, 1.2, 5e-6, .5, 20261303, "dcd001-item"))
+                 .005, .02, .5, .02, .8, 1.2, 5e-6, .5, 20261303, "dcd001-item"), args.device)
     mbi11 = train(("mbi011_table", mbi, "table_1200", "mbi011-cat04379243-heavy", 2, 2, 1200, 150,
-                   .005, .02, .4, .02, .8, 1.2, 5e-6, 0, 20260903, "mbi009-item"))
+                   .005, .02, .4, .02, .8, 1.2, 5e-6, 0, 20260903, "mbi009-item"), args.device)
     tsd3 = train(("tsd003", mbi11, "table_1200", "tsd003-dcd", 2, 1, 1200, 75,
-                  .005, .02, .4, .02, .8, 1.2, 2e-6, .5, 20261411, "dcd001-item"))
+                  .005, .02, .4, .02, .8, 1.2, 2e-6, .5, 20261411, "dcd001-item"), args.device)
     tsd4 = train(("tsd004", tsd3, "table_1200", "tsd004-strong", 2, 1, 1200, 75,
-                  .005, .02, .4, .02, .8, 1.2, 1e-6, 1, 20261511, "dcd001-item"))
+                  .005, .02, .4, .02, .8, 1.2, 1e-6, 1, 20261511, "dcd001-item"), args.device)
     ssd = train(("ssd009", dcd, "sofa_1000", "ssd009-strong", 2, 1, 1000, 63,
-                 .005, .02, .4, .02, .8, 1.2, 2e-6, 1, 20262011, "dcd001-item"))
+                 .005, .02, .4, .02, .8, 1.2, 2e-6, 1, 20262011, "dcd001-item"), args.device)
     airplane = train(("plr_airplane", dcd, "airplane_1000", "plr001-airplane", 2, 4, 1000, 250,
-                      .012489692407870212, .014616960844581714, 0, 0, 1, 1, 1e-6, .5, 20262701, "dcd001-item"))
+                      .012489692407870212, .014616960844581714, 0, 0, 1, 1, 1e-6, .5, 20262701, "dcd001-item"), args.device)
     table = train(("plr_table", tsd4, "table_1200", "plr001-table", 2, 4, 1200, 300,
-                   .009048618504872253, .012903604290095811, 0, 0, 1, 1, 1e-6, 1, 20262702, "dcd001-item"))
+                   .009048618504872253, .012903604290095811, 0, 0, 1, 1, 1e-6, 1, 20262702, "dcd001-item"), args.device)
     sofa = train(("plr_sofa", ssd, "sofa_1000", "plr001-sofa", 2, 4, 1000, 250,
-                  .008374454205880252, .011346570064822026, 0, 0, 1, 1, 1e-6, 1, 20262703, "dcd001-item"))
+                  .008374454205880252, .011346570064822026, 0, 0, 1, 1, 1e-6, 1, 20262703, "dcd001-item"), args.device)
 
     tail = f"{W}/training/plr_tail/plr003-tail-epoch02.pkl"
     add("train_plr_tail", [
@@ -128,7 +138,7 @@ def main():
         "--scale-min", 1, "--scale-max", 1, "--lr", "1e-6", "--weight-decay", 0,
         "--grad-clip", 1, "--dcd-alpha", 100, "--dcd-n-lambda", .5, "--dcd-weight", .5,
         "--seed", 20262731, "--seed-namespace", "plr003-tail-item",
-        "--expected-train-count", 1885, "--expected-steps-per-epoch", 472, "--device", "cuda",
+        "--expected-train-count", 1885, "--expected-steps-per-epoch", 472, "--device", args.device,
     ], tail)
 
     rot_checkpoint = f"{W}/training/rot/spcf-final.pkl"
@@ -136,7 +146,7 @@ def main():
                        "--train-list", "configs/lists/rot_train.txt",
                        "--validation-list", "configs/lists/rot_validate.txt",
                        "--output-root", f"{W}/training/rot", "--resume",
-                       "--device", "cuda"], rot_checkpoint)
+                       "--device", args.device], rot_checkpoint)
 
     all_keys = f"{W}/lists/test_all.txt"
     add("discover_test_keys", ["prepare-keys", "--root", TEST,
@@ -150,16 +160,16 @@ def main():
     rot = f"{W}/predictions/rot/canonical"
     add("generate_rot", ["generate-rot", "--input-root", TEST, "--key-list", all_keys,
                          "--checkpoint", rot_checkpoint, "--output-root", f"{W}/predictions/rot",
-                         "--expected-count", 200, "--device", "cuda"],
+                         "--expected-count", 200, "--device", args.device],
         f"{W}/predictions/rot/canonical_manifest.json")
-    incumbent_member = infer("mbi009", mbi, all_keys, 200)
-    dcd_pred = infer("dcd84", dcd, dcd_keys, 84)
-    full_table = infer("full_table92", tsd4, table_keys, 92)
-    full_sofa = infer("full_sofa30", ssd, sofa_keys, 30)
-    plr_airplane = infer("plr_airplane35", airplane, airplane_keys, 35)
-    plr_table = infer("plr_table92", table, table_keys, 92)
-    plr_sofa = infer("plr_sofa30", sofa, sofa_keys, 30)
-    plr_tail = infer("plr_tail40", tail, tail_keys, 40)
+    incumbent_member = infer("mbi009", mbi, all_keys, 200, args.device)
+    dcd_pred = infer("dcd84", dcd, dcd_keys, 84, args.device)
+    full_table = infer("full_table92", tsd4, table_keys, 92, args.device)
+    full_sofa = infer("full_sofa30", ssd, sofa_keys, 30, args.device)
+    plr_airplane = infer("plr_airplane35", airplane, airplane_keys, 35, args.device)
+    plr_table = infer("plr_table92", table, table_keys, 92, args.device)
+    plr_sofa = infer("plr_sofa30", sofa, sofa_keys, 30, args.device)
+    plr_tail = infer("plr_tail40", tail, tail_keys, 40, args.device)
 
     incumbent = f"{W}/predictions/incumbent"
     inc_manifest = f"{W}/manifests/incumbent.json"

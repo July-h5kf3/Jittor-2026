@@ -26,6 +26,7 @@ import numpy as np
 from jittor import optim
 from jittor.dataset import Dataset
 
+from plr3d.backend import add_device_argument, configure_device
 from plr3d.io import PLRError, sha256_file
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
@@ -346,13 +347,13 @@ def parse_args(argv: Optional[Sequence[str]] = None):
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--log-interval", type=int, default=20)
     parser.add_argument("--resume", action="store_true")
-    parser.add_argument("--device", choices=("cuda", "cpu"), default="cuda")
+    add_device_argument(parser)
     return parser.parse_args(argv)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
-    jt.flags.use_cuda = 1 if args.device == "cuda" else 0
+    configure_device(args.device, jt)
     for path in (args.mesh_root, args.train_list, args.validation_list):
         if not path.exists():
             raise PLRError(f"missing ROT input: {path}")
