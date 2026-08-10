@@ -550,7 +550,8 @@ For one failure at a time:
 
 - [x] **Step 4: Verify the complete matrix and commit**
 
-Expected: all six tests pass on one Ascend 910 without an unintended CPU fallback.
+Expected: all six tests pass on one Ascend 910 while `use_acl` remains enabled,
+and the repaired gather/KNN branches contain no explicit host-transfer fallback.
 
 Commit only the files actually required:
 
@@ -562,8 +563,8 @@ git commit -m "test: validate PLR primitives on Jittor ACL"
 ### Task 6 Verification Evidence — 2026-08-10
 
 - `python -m unittest -v tests.test_acl_primitives` ran 6/6 tests successfully in the activated one-NPU runtime: Jittor `06f5d3d271555682c95aa3505518f47eeab2bd9c`, CANN 9.1, and `has_acl=1`. Every test asserts `use_acl==1` at its beginning and end; the fixed Jittor runtime reports `(use_acl, use_cuda)=(1,1)` after ACL selection.
-- The matrix covers float32 MatMul/BMM plus a gradient, Linear/Conv1d/depthwise Conv1d, BatchNorm eval/LayerNorm/ReLU/SiLU, project gather/scatter/ArgMax/top-k, coordinate and feature KNN, and an SGD forward/backward/update/checkpoint round trip. Numerical comparisons use NumPy references at `rtol=1e-4`, `atol=1e-5`.
-- Compatibility repair required: ACL does not support the project’s flattened advanced `Index` gather or CUDA-only `jt.misc.knn`. `plr3d/ops/geometry.py` now uses the pinned vendor’s ACL `jt.gather` path and computes coordinate KNN with the existing ACL-safe pairwise squared-distance/top-k composition. No CPU fallback or vendor source change was used.
+- The matrix covers float32 MatMul/BMM plus a gradient, Linear/Conv1d/depthwise Conv1d, BatchNorm train/backward/running-stat/eval semantics, LayerNorm/ReLU/SiLU, project gather forward/backward, scatter/ArgMax/top-k, coordinate and feature KNN, and an exact SGD update plus model-checkpoint round trip. Numerical comparisons use NumPy references at `rtol=1e-4`, `atol=1e-5`.
+- Compatibility repair required: ACL does not support the project’s flattened advanced `Index` gather or CUDA-only `jt.misc.knn`, and the pinned vendor `GatherACL.grad` allocates an index-shaped rather than source-shaped gradient. The project now uses ACL Gather with a source-shaped scatter-add gradient, and both PLR and ROT coordinate KNN use pairwise squared-distance/top-k whenever `use_acl=1`. The matrix proves that these paths pass while the ACL flag remains enabled. The repaired gather and KNN branches contain no explicit `.numpy()`, `.item()`, or host-transfer fallback; this evidence does not claim per-operator backend provenance inside vendor Jittor. No vendor source was changed.
 
 ## Task 7: Single-NPU Model and Training Smoke
 

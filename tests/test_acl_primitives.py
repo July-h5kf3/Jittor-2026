@@ -47,7 +47,7 @@ def _conv1d_reference(values, weight, bias):
 
 @unittest.skipUnless(HAS_ACL, "Jittor ACL backend is unavailable")
 class ACLPrimitiveCompatibilityTests(unittest.TestCase):
-    """Run every operation after selecting ACL, never by silently using CPU."""
+    """Run after selecting ACL and assert that the ACL flag remains enabled."""
 
     @classmethod
     def setUpClass(cls):
@@ -144,6 +144,56 @@ class ACLPrimitiveCompatibilityTests(unittest.TestCase):
         )
         self.assertArrayClose(batchnorm(jt.array(values_np)), batchnorm_expected)
 
+        train_weight_np = np.array([1.25, -0.75], dtype=np.float32)
+        train_bias_np = np.array([0.5, -0.25], dtype=np.float32)
+        initial_running_mean_np = np.array([0.5, -1.0], dtype=np.float32)
+        initial_running_var_np = np.array([2.0, 4.0], dtype=np.float32)
+        momentum = 0.25
+        training_batchnorm = nn.BatchNorm1d(
+            2, eps=1e-5, momentum=momentum, is_train=True
+        )
+        training_batchnorm.weight.assign(jt.array(train_weight_np))
+        training_batchnorm.bias.assign(jt.array(train_bias_np))
+        training_batchnorm.running_mean.assign(jt.array(initial_running_mean_np))
+        training_batchnorm.running_var.assign(jt.array(initial_running_var_np))
+        training_batchnorm.train()
+        training_input = jt.array(values_np)
+        training_output = training_batchnorm(training_input)
+        training_gradient = jt.grad((training_output ** 2).sum(), training_input)
+
+        batch_mean = values_np.mean(axis=(0, 2))
+        batch_var = np.maximum(
+            (values_np * values_np).mean(axis=(0, 2)) - batch_mean * batch_mean,
+            0.0,
+        )
+        training_expected = (
+            (values_np - batch_mean.reshape(1, 2, 1))
+            / np.sqrt(batch_var.reshape(1, 2, 1) + 1e-5)
+            * train_weight_np.reshape(1, 2, 1)
+            + train_bias_np.reshape(1, 2, 1)
+        )
+        self.assertArrayClose(training_output, training_expected)
+        self.assertTrue(np.isfinite(training_gradient.numpy()).all())
+
+        expected_running_mean = initial_running_mean_np + (
+            batch_mean - initial_running_mean_np
+        ) * momentum
+        expected_running_var = initial_running_var_np + (
+            batch_var - initial_running_var_np
+        ) * momentum
+        self.assertArrayClose(training_batchnorm.running_mean, expected_running_mean)
+        self.assertArrayClose(training_batchnorm.running_var, expected_running_var)
+
+        training_batchnorm.eval()
+        eval_input_np = values_np * 0.5 + 0.25
+        eval_expected = (
+            (eval_input_np - expected_running_mean.reshape(1, 2, 1))
+            / np.sqrt(expected_running_var.reshape(1, 2, 1) + 1e-5)
+            * train_weight_np.reshape(1, 2, 1)
+            + train_bias_np.reshape(1, 2, 1)
+        )
+        self.assertArrayClose(training_batchnorm(jt.array(eval_input_np)), eval_expected)
+
         layer_input_np = np.array([[1.0, 2.0, 4.0], [-2.0, 0.0, 1.0]], dtype=np.float32)
         layernorm = nn.LayerNorm(3, eps=1e-5)
         layer_weight_np = np.array([1.0, 0.5, -1.0], dtype=np.float32)
@@ -175,6 +225,23 @@ class ACLPrimitiveCompatibilityTests(unittest.TestCase):
         )
         self.assertEqual(tuple(gathered.shape), (2, 2, 2, 3))
         self.assertArrayClose(gathered, expected_gathered)
+
+        rank2_indices_np = np.array([[2, 0, 2], [1, 3, 1]], dtype=np.int64)
+        differentiable_points = jt.array(points_np)
+        rank2_gathered = gather_points(
+            differentiable_points, jt.array(rank2_indices_np)
+        )
+        expected_rank2 = np.stack(
+            [points_np[batch_index][rank2_indices_np[batch_index]] for batch_index in range(2)]
+        )
+        self.assertEqual(tuple(rank2_gathered.shape), (2, 3, 3))
+        self.assertArrayClose(rank2_gathered, expected_rank2)
+        gather_gradient = jt.grad(rank2_gathered.sum(), differentiable_points)
+        expected_gradient = np.zeros_like(points_np)
+        for batch_index in range(rank2_indices_np.shape[0]):
+            for point_index in rank2_indices_np[batch_index]:
+                expected_gradient[batch_index, point_index] += 1.0
+        self.assertArrayClose(gather_gradient, expected_gradient)
 
         scatter_indices_np = np.array([[0, 0], [2, 2], [1, 1], [2, 2]], dtype=np.int32)
         scatter_values_np = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0], [-1.0, 1.0]], dtype=np.float32)
@@ -238,13 +305,64 @@ class ACLPrimitiveCompatibilityTests(unittest.TestCase):
         rot_indices = get_knn_idx(jt.array(feature_np), jt.array(feature_np), k=1, offset=1)
         np.testing.assert_array_equal(rot_indices.numpy(), feature_expected_indices[:, :, 1:])
 
+        rot_coordinates_np = np.array(
+            [[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [4.0, 0.0, 0.0]]],
+            dtype=np.float32,
+        )
+        rot_pairwise = (
+            (rot_coordinates_np[:, :, np.newaxis] - rot_coordinates_np[:, np.newaxis]) ** 2
+        ).sum(axis=-1)
+        rot_expected_indices = np.argsort(rot_pairwise, axis=-1).astype(np.int32)
+        geometry_self_distances, geometry_self_indices = knn_indices(
+            jt.array(rot_coordinates_np), jt.array(rot_coordinates_np), k=2
+        )
+        self.assertArrayClose(
+            geometry_self_distances,
+            np.take_along_axis(rot_pairwise, rot_expected_indices[:, :, :2], axis=-1),
+        )
+        np.testing.assert_array_equal(
+            geometry_self_indices.numpy(), rot_expected_indices[:, :, :2]
+        )
+        np.testing.assert_array_equal(
+            geometry_self_indices.numpy()[:, :, 0],
+            np.arange(rot_coordinates_np.shape[1], dtype=np.int32).reshape(1, -1),
+        )
+        rot_with_self = get_knn_idx(
+            jt.array(rot_coordinates_np), jt.array(rot_coordinates_np), k=2, offset=0
+        )
+        np.testing.assert_array_equal(
+            rot_with_self.numpy(), rot_expected_indices[:, :, :2]
+        )
+        np.testing.assert_array_equal(
+            rot_with_self.numpy()[:, :, 0],
+            np.arange(rot_coordinates_np.shape[1], dtype=np.int32).reshape(1, -1),
+        )
+        rot_without_self = get_knn_idx(
+            jt.array(rot_coordinates_np), jt.array(rot_coordinates_np), k=1, offset=1
+        )
+        np.testing.assert_array_equal(
+            rot_without_self.numpy(), rot_expected_indices[:, :, 1:2]
+        )
+
     def test_optimizer_step_and_checkpoint_roundtrip(self):
         inputs_np = np.array([[1.0, 2.0], [-1.0, 0.5], [3.0, -2.0]], dtype=np.float32)
         targets_np = np.array([[0.5], [-1.0], [2.0]], dtype=np.float32)
+        initial_weight_np = np.array([[0.25, -0.5]], dtype=np.float32)
+        initial_bias_np = np.array([0.1], dtype=np.float32)
+        learning_rate = 0.1
         model = nn.Linear(2, 1)
-        model.weight.assign(jt.array(np.array([[0.25, -0.5]], dtype=np.float32)))
-        model.bias.assign(jt.array(np.array([0.1], dtype=np.float32)))
-        optimizer = optim.SGD(model.parameters(), lr=0.1)
+        model.weight.assign(jt.array(initial_weight_np))
+        model.bias.assign(jt.array(initial_bias_np))
+        optimizer = optim.SGD(model.parameters(), lr=learning_rate)
+
+        prediction_np = inputs_np @ initial_weight_np.T + initial_bias_np
+        error_np = prediction_np - targets_np
+        expected_weight = initial_weight_np - learning_rate * (
+            (2.0 / inputs_np.shape[0]) * error_np.T @ inputs_np
+        )
+        expected_bias = initial_bias_np - learning_rate * (
+            (2.0 / inputs_np.shape[0]) * error_np.sum(axis=0)
+        )
 
         inputs = jt.array(inputs_np)
         targets = jt.array(targets_np)
@@ -256,6 +374,8 @@ class ACLPrimitiveCompatibilityTests(unittest.TestCase):
         optimizer.step()
         jt.sync_all()
         after = model.weight.numpy()
+        np.testing.assert_allclose(after, expected_weight, rtol=RTOL, atol=ATOL)
+        self.assertArrayClose(model.bias, expected_bias)
         self.assertFalse(np.allclose(before, after))
         self.assertTrue(np.isfinite(after).all())
 
