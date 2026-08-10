@@ -636,7 +636,7 @@ git commit -m "feat: complete single-NPU Ascend correctness smoke"
   It keeps the existing CPU-reference → selected-backend selective-scan forward
   and eight-gradient check, then checks finite model output and gradients,
   performs real SGD, verifies a changed finite parameter, and compares eval
-  output before/after a temporary checkpoint reload at `rtol=1e-4, atol=1e-5`.
+  output before/after a temporary checkpoint reload at `rtol=1e-3, atol=5e-5`.
 - The initial real model RED was CANN `StridedSliceAssignV2` in the full model
   gradient request: `Var's dim num must equal to input_value's`, followed by
   ACL workspace/tiling errors. Jittor logged that BatchNorm
@@ -677,6 +677,16 @@ git commit -m "feat: complete single-NPU Ascend correctness smoke"
   The final post-commit remote matrix again ran 6/6 and the deep doctor printed
   `JITTOR_SMOKE_OK 320 4069603` with `checkpoint_roundtrip: true` in
   3.897167 seconds.
+- The smoke JSON now has one schema for CPU, CUDA, and ACL. Every report includes
+  boolean `model_acceptance_executed`, object `optimizer_update`, array-valued
+  input/output shapes, integer `parameter_count`, boolean
+  `checkpoint_roundtrip`, and numeric-or-null `checkpoint_max_abs_diff`.
+  CPU/CUDA report the unexecuted model acceptance with empty shapes, zero
+  parameters, no update, `false` round trip, and null diff. The latest real ACL
+  report passed machine type checks with model acceptance `true`, shapes
+  `[1, 5, 3]`, 4,069,603 parameters, the exact updated parameter
+  `feature_nets.0.linear3.weight`, checkpoint round trip `true`, and measured
+  checkpoint max absolute difference `0.0`; elapsed time was 3.923240 seconds.
 - This completes single-NPU correctness only. ACL selective-scan performance
   work and HCCL/multi-card execution remain deferred to Milestones B/C.
 

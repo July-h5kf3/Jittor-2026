@@ -66,6 +66,29 @@ def reduced_model_gradient_targets(inputs, model):
     return [inputs, model.feature_nets[0].linear3.weight]
 
 
+def unexecuted_model_acceptance_report():
+    """Return the stable report shape when model acceptance is not requested."""
+    return {
+        "model_acceptance_executed": False,
+        "input_shape": [],
+        "output_shape": [],
+        "parameter_count": 0,
+        "optimizer_update": {"changed": False, "parameter_names": []},
+        "checkpoint_roundtrip": False,
+        "checkpoint_max_abs_diff": None,
+    }
+
+
+def serialize_smoke_report(device_report, elapsed_seconds, model_report):
+    """Serialize the device-independent smoke report schema."""
+    report = {
+        "device_status": device_report,
+        "elapsed_seconds": elapsed_seconds,
+        **model_report,
+    }
+    return json.dumps(report, sort_keys=True)
+
+
 def run_acl_model_acceptance(model, model_type, jt_module):
     """Exercise one real ACL training update and a model checkpoint round trip."""
     from jittor import optim
@@ -134,11 +157,13 @@ def run_acl_model_acceptance(model, model_type, jt_module):
         jt_module.sync_all()
         restored.eval()
         post_load_np = restored(inputs).numpy()
+    checkpoint_max_abs_diff = float(np.max(np.abs(post_load_np - pre_save_np)))
     # With all K=4 neighbours present, the measured ACL float32 drift is <=3.03e-5.
     np.testing.assert_allclose(post_load_np, pre_save_np, rtol=1e-3, atol=5e-5)
     if int(jt_module.flags.use_acl) != 1:
         raise AssertionError("ACL model smoke must leave ACL enabled")
     return {
+        "model_acceptance_executed": True,
         "input_shape": list(inputs_np.shape),
         "output_shape": list(output.shape),
         "parameter_count": int(
@@ -146,6 +171,7 @@ def run_acl_model_acceptance(model, model_type, jt_module):
         ),
         "optimizer_update": {"changed": True, "parameter_names": changed},
         "checkpoint_roundtrip": True,
+        "checkpoint_max_abs_diff": checkpoint_max_abs_diff,
     }
 
 
@@ -197,19 +223,14 @@ def main(argv=None):
         assert bool(jt.flags.use_acl), "ACL smoke must leave ACL enabled"
         model_result = run_acl_model_acceptance(model, DenoiseNet, jt)
     else:
-        model_result = {
-            "input_shape": None,
-            "output_shape": None,
-            "parameter_count": parameter_count,
-            "optimizer_update": False,
-            "checkpoint_roundtrip": False,
-        }
-    report = {
-        "device_status": device_status(args.device, jt),
-        "elapsed_seconds": round(time.perf_counter() - started, 6),
-        **model_result,
-    }
-    print(json.dumps(report, sort_keys=True))
+        model_result = unexecuted_model_acceptance_report()
+    print(
+        serialize_smoke_report(
+            device_status(args.device, jt),
+            round(time.perf_counter() - started, 6),
+            model_result,
+        )
+    )
     print("JITTOR_SMOKE_OK", len(state), parameter_count)
 
 

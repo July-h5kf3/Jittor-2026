@@ -112,6 +112,139 @@ class SparseJittor:
 
 
 class BackendTests(unittest.TestCase):
+    def test_smoke_report_json_schema_is_stable_with_and_without_model_acceptance(self):
+        smoke = load_smoke_module()
+        reports = {
+            "cpu": smoke.unexecuted_model_acceptance_report(),
+            "cuda": smoke.unexecuted_model_acceptance_report(),
+            "acl": {
+                "model_acceptance_executed": True,
+                "input_shape": [1, 5, 3],
+                "output_shape": [1, 5, 3],
+                "parameter_count": 4069603,
+                "optimizer_update": {
+                    "changed": True,
+                    "parameter_names": ["feature_nets.0.linear3.weight"],
+                },
+                "checkpoint_roundtrip": True,
+                "checkpoint_max_abs_diff": 3.029406e-5,
+            },
+        }
+
+        for device, model_report in reports.items():
+            with self.subTest(device=device):
+                encoded = smoke.serialize_smoke_report(
+                    {"device": device}, 1.25, model_report
+                )
+                parsed = json.loads(encoded)
+
+                self.assertIs(type(parsed["model_acceptance_executed"]), bool)
+                self.assertIs(type(parsed["optimizer_update"]), dict)
+                self.assertIs(type(parsed["optimizer_update"]["changed"]), bool)
+                self.assertIs(
+                    type(parsed["optimizer_update"]["parameter_names"]), list
+                )
+                self.assertTrue(
+                    all(
+                        type(name) is str
+                        for name in parsed["optimizer_update"]["parameter_names"]
+                    )
+                )
+                self.assertIs(type(parsed["input_shape"]), list)
+                self.assertIs(type(parsed["output_shape"]), list)
+                self.assertTrue(
+                    all(type(size) is int for size in parsed["input_shape"])
+                )
+                self.assertTrue(
+                    all(type(size) is int for size in parsed["output_shape"])
+                )
+                self.assertIs(type(parsed["parameter_count"]), int)
+                self.assertIs(type(parsed["checkpoint_roundtrip"]), bool)
+                self.assertTrue(
+                    parsed["checkpoint_max_abs_diff"] is None
+                    or type(parsed["checkpoint_max_abs_diff"]) is float
+                )
+                self.assertIs(type(parsed["device_status"]), dict)
+                self.assertIs(type(parsed["elapsed_seconds"]), float)
+
+        self.assertEqual(reports["cpu"], reports["cuda"])
+        self.assertFalse(reports["cpu"]["model_acceptance_executed"])
+        self.assertEqual(reports["cpu"]["input_shape"], [])
+        self.assertEqual(reports["cpu"]["output_shape"], [])
+        self.assertEqual(reports["cpu"]["parameter_count"], 0)
+        self.assertEqual(
+            reports["cpu"]["optimizer_update"],
+            {"changed": False, "parameter_names": []},
+        )
+        self.assertFalse(reports["cpu"]["checkpoint_roundtrip"])
+        self.assertIsNone(reports["cpu"]["checkpoint_max_abs_diff"])
+        self.assertTrue(reports["acl"]["model_acceptance_executed"])
+        self.assertEqual(
+            reports["acl"]["optimizer_update"]["parameter_names"],
+            ["feature_nets.0.linear3.weight"],
+        )
+        self.assertEqual(reports["acl"]["checkpoint_max_abs_diff"], 3.029406e-5)
+
+    def test_task7_evidence_uses_measured_checkpoint_tolerance_consistently(self):
+        plan = (
+            ROOT / "docs" / "superpowers" / "plans" / "2026-08-10-ascend-single-npu.md"
+        ).read_text(encoding="utf-8")
+        task7 = plan.split("## Task 7:", 1)[1].split("## Task 8:", 1)[0]
+
+        self.assertNotIn("`rtol=1e-4, atol=1e-5`", task7)
+        self.assertIn("`rtol=1e-3, atol=5e-5`", task7)
+
+    def test_non_acl_smoke_main_serializes_the_unexecuted_model_schema(self):
+        smoke = load_smoke_module()
+        jt = FakeJittor(has_cuda=False, has_acl=False)
+
+        class Parameter:
+            def numel(self):
+                return 123
+
+        class Model:
+            def __init__(self, **_kwargs):
+                pass
+
+            def state_dict(self):
+                return {"weight": Parameter()}
+
+        models = types.ModuleType("plr3d.models")
+        models.DenoiseNet = Model
+        ops = types.ModuleType("plr3d.ops")
+        ops.__path__ = []
+        selective_scan = types.ModuleType("plr3d.ops.selective_scan")
+        selective_scan.selective_scan = lambda *values: values[0]
+        selective_scan.selective_scan_reference = lambda *values: values[0]
+        output = io.StringIO()
+
+        with mock.patch.dict(
+            sys.modules,
+            {
+                "jittor": jt,
+                "plr3d.models": models,
+                "plr3d.ops": ops,
+                "plr3d.ops.selective_scan": selective_scan,
+            },
+        ), mock.patch.object(
+            smoke,
+            "run_scan",
+            return_value=(np.array([1.0]), [np.array([1.0])] * 8),
+        ), mock.patch("sys.stdout", output):
+            smoke.main(["--device", "cpu"])
+
+        report = json.loads(output.getvalue().splitlines()[0])
+        self.assertFalse(report["model_acceptance_executed"])
+        self.assertEqual(report["input_shape"], [])
+        self.assertEqual(report["output_shape"], [])
+        self.assertEqual(report["parameter_count"], 0)
+        self.assertEqual(
+            report["optimizer_update"],
+            {"changed": False, "parameter_names": []},
+        )
+        self.assertFalse(report["checkpoint_roundtrip"])
+        self.assertIsNone(report["checkpoint_max_abs_diff"])
+
     def test_reduced_model_gradient_targets_exclude_batchnorm_running_buffers(self):
         smoke = load_smoke_module()
         inputs = object()
