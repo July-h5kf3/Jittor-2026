@@ -446,11 +446,11 @@ git commit -m "feat: report and validate ACL environment in doctor"
 - Modify: `plr3d/ops/selective_scan.py`
 - Modify: `tests/smoke_jittor.py`
 
-- [ ] **Step 1: Write the failing ACL smoke behavior**
+- [x] **Step 1: Write the failing ACL smoke behavior**
 
 Extend `tests/smoke_jittor.py` with `--device {cpu,cuda,acl}`. Configure the backend before creating tensors. In ACL mode, run both `selective_scan` and `selective_scan_reference`, compare the forward arrays with `rtol=2e-5, atol=2e-6`, compare all eight gradients with `rtol=2e-4, atol=2e-5`, and assert `jt.flags.use_acl == 1`.
 
-- [ ] **Step 2: Install the pinned remote environment before testing**
+- [x] **Step 2: Install the pinned remote environment before testing**
 
 Prepare the bundle locally, transfer its Jittor checkout to `/data/ldc/vendor/jittor-06f5d3d271555682c95aa3505518f47eeab2bd9c`, transfer wheels to `/data/ldc/packages/track2-ascend`, synchronize project code, then run inside the container:
 
@@ -462,7 +462,7 @@ python -c 'import jittor as jt; print(jt.__version__, jt.compiler.has_acl, jt.co
 
 Expected: import succeeds, the pinned source is active, and `has_acl` is true.
 
-- [ ] **Step 3: Verify RED remotely**
+- [x] **Step 3: Verify RED remotely**
 
 Run:
 
@@ -472,7 +472,7 @@ python /data/ldc/Track2-new/tests/smoke_jittor.py --device acl
 
 Expected: fail because current selection does not explicitly route ACL to the reference path.
 
-- [ ] **Step 4: Implement explicit ACL routing**
+- [x] **Step 4: Implement explicit ACL routing**
 
 At the end of `selective_scan` use:
 
@@ -487,7 +487,7 @@ if bool(jt.flags.use_cuda):
 return selective_scan_reference(u, delta, a, b_var, c_var, d_skip, z, delta_bias)
 ```
 
-- [ ] **Step 5: Verify GREEN remotely and commit**
+- [x] **Step 5: Verify GREEN remotely and commit**
 
 Re-synchronize and rerun the ACL smoke. Expected: forward and all gradients pass.
 
@@ -497,6 +497,14 @@ Commit:
 git add plr3d/ops/selective_scan.py tests/smoke_jittor.py
 git commit -m "feat: add ACL selective scan reference path"
 ```
+
+### Task 5 Verification Evidence — 2026-08-10
+
+- The remote Jittor checkout root was exactly `/data/ldc/vendor/jittor-06f5d3d271555682c95aa3505518f47eeab2bd9c`, `HEAD` was the full pinned SHA `06f5d3d271555682c95aa3505518f47eeab2bd9c`, and `git status --porcelain` was empty.
+- The activated runtime reported Python 3.11.15 on aarch64, Jittor 1.3.11.0 from the pinned checkout, CANN 9.1 at `/usr/local/Ascend/cann-9.1.0-beta.1`, `tikcc_path=/usr/local/Ascend/cann-9.1.0-beta.1/bin/ccec`, and `has_acl=1`.
+- After ACL configuration the real flags were `(use_acl, use_cuda)=(1,1)`. At this pinned Jittor commit, `use_acl` is an alias of the generic `use_cuda` device flag; the dual-flags routing regression test verifies that selective scan still chooses the ACL reference path and never calls the CUDA custom operator.
+- `/data/ldc/envs/track2-ascend/bin/python /data/ldc/Track2-new/tests/smoke_jittor.py --device acl` exited 0 and ended with `JITTOR_SMOKE_OK 1280 16278412`. The smoke compared the selective-scan forward output and all eight gradients with the Task 5 tolerances.
+- This evidence completes only Task 5. Final doctor, primitive-matrix, reduced-model, optimizer, and checkpoint evidence remains assigned to Tasks 7 and 8; Task 6 and Task 7 are not marked complete here.
 
 ## Task 6: ACL Primitive Compatibility Matrix
 
