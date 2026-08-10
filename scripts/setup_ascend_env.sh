@@ -19,7 +19,7 @@ if [ ! -d "$WHEEL_ROOT" ]; then
     printf 'error: wheel directory not found: %s\n' "$WHEEL_ROOT" >&2
     exit 1
 fi
-if ! actual_jittor_sha=$(git -C "$JITTOR_ROOT" rev-parse HEAD); then
+if ! actual_jittor_sha=$(git -c safe.directory="$JITTOR_ROOT" -C "$JITTOR_ROOT" rev-parse HEAD); then
     printf 'error: unable to read Jittor revision from %s\n' "$JITTOR_ROOT" >&2
     exit 1
 fi
@@ -27,7 +27,7 @@ if [ "$actual_jittor_sha" != "$JITTOR_SHA" ]; then
     printf 'error: Jittor revision is %s; expected %s\n' "$actual_jittor_sha" "$JITTOR_SHA" >&2
     exit 1
 fi
-if ! jittor_status=$(git -C "$JITTOR_ROOT" status --porcelain); then
+if ! jittor_status=$(git -c safe.directory="$JITTOR_ROOT" -C "$JITTOR_ROOT" status --porcelain); then
     printf 'error: unable to inspect Jittor working tree: %s\n' "$JITTOR_ROOT" >&2
     exit 1
 fi

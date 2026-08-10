@@ -84,13 +84,27 @@ class AscendEnvironmentContractTests(unittest.TestCase):
 
     def test_remote_setup_checks_jittor_revision_and_runtime(self):
         text = (ROOT / "scripts/setup_ascend_env.sh").read_text(encoding="utf-8")
-        self.assertIn('git -C "$JITTOR_ROOT" rev-parse HEAD', text)
+        self.assertIn(
+            'git -c safe.directory="$JITTOR_ROOT" -C "$JITTOR_ROOT" rev-parse HEAD',
+            text,
+        )
         self.assertIn('"$actual_jittor_sha" != "$JITTOR_SHA"', text)
         self.assertIn("python3.11 -m venv", text)
         self.assertIn("sys.version_info[:2] != (3, 11)", text)
         self.assertIn('platform.machine().lower() != "aarch64"', text)
-        self.assertIn('git -C "$JITTOR_ROOT" status --porcelain', text)
+        self.assertIn(
+            'git -c safe.directory="$JITTOR_ROOT" -C "$JITTOR_ROOT" status --porcelain',
+            text,
+        )
         self.assertNotIn('test -f "$PROJECT_ROOT/requirements-ascend.txt"', text)
+
+    def test_remote_setup_scopes_git_safe_directory_to_jittor_checkout(self):
+        text = (ROOT / "scripts/setup_ascend_env.sh").read_text(encoding="utf-8")
+        self.assertEqual(
+            text.count('git -c safe.directory="$JITTOR_ROOT" -C "$JITTOR_ROOT"'),
+            2,
+        )
+        self.assertNotIn("git config --global", text)
 
     def test_jittor_source_validation_accepts_only_clean_matching_revision(self):
         with tempfile.TemporaryDirectory() as temp_dir:
