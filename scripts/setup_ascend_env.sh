@@ -7,15 +7,32 @@ WHEEL_ROOT=/data/ldc/packages/track2-ascend
 JITTOR_SHA=06f5d3d271555682c95aa3505518f47eeab2bd9c
 JITTOR_ROOT=/data/ldc/vendor/jittor-06f5d3d271555682c95aa3505518f47eeab2bd9c
 
-test -f "$PROJECT_ROOT/requirements-ascend.txt"
-test -f "$JITTOR_ROOT/setup.py"
-test -d "$WHEEL_ROOT"
+if [ ! -f "$PROJECT_ROOT/requirements-ascend.txt" ]; then
+    printf 'error: requirements file not found: %s\n' "$PROJECT_ROOT/requirements-ascend.txt" >&2
+    exit 1
+fi
+if [ ! -f "$JITTOR_ROOT/setup.py" ]; then
+    printf 'error: Jittor setup.py not found: %s\n' "$JITTOR_ROOT/setup.py" >&2
+    exit 1
+fi
+if [ ! -d "$WHEEL_ROOT" ]; then
+    printf 'error: wheel directory not found: %s\n' "$WHEEL_ROOT" >&2
+    exit 1
+fi
 if ! actual_jittor_sha=$(git -C "$JITTOR_ROOT" rev-parse HEAD); then
     printf 'error: unable to read Jittor revision from %s\n' "$JITTOR_ROOT" >&2
     exit 1
 fi
 if [ "$actual_jittor_sha" != "$JITTOR_SHA" ]; then
     printf 'error: Jittor revision is %s; expected %s\n' "$actual_jittor_sha" "$JITTOR_SHA" >&2
+    exit 1
+fi
+if ! jittor_status=$(git -C "$JITTOR_ROOT" status --porcelain); then
+    printf 'error: unable to inspect Jittor working tree: %s\n' "$JITTOR_ROOT" >&2
+    exit 1
+fi
+if [ -n "$jittor_status" ]; then
+    printf 'error: Jittor working tree is not clean: %s\n' "$JITTOR_ROOT" >&2
     exit 1
 fi
 mkdir -p /data/ldc/envs /data/ldc/cache/jittor-track2-ascend
