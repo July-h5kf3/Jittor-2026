@@ -7,6 +7,21 @@ from typing import Optional, Tuple
 import jittor as jt
 
 
+class _GatherPointsACL(jt.Function):
+    """ACL Gather with a source-shaped scatter-add gradient."""
+
+    def execute(self, source: jt.Var, index: jt.Var) -> jt.Var:
+        self.source_shape = tuple(source.shape)
+        self.index = index
+        return jt.gather(source, 2, index)
+
+    def grad(self, grad_output: jt.Var):
+        grad_source = jt.zeros(self.source_shape, dtype=grad_output.dtype).scatter_(
+            2, self.index, grad_output, reduce="add"
+        )
+        return grad_source, None
+
+
 def gather_points(points: jt.Var, indices: jt.Var) -> jt.Var:
     """Gather batched points/features.
 
@@ -33,7 +48,10 @@ def gather_points(points: jt.Var, indices: jt.Var) -> jt.Var:
     gather_index = indices.int32().reshape(batch, 1, flat_count).broadcast(
         (batch, channels, flat_count)
     )
-    gathered = jt.gather(source, 2, gather_index)
+    if getattr(jt.flags, "use_acl", 0):
+        gathered = _GatherPointsACL()(source, gather_index)
+    else:
+        gathered = jt.gather(source, 2, gather_index)
     return gathered.reshape((batch, channels) + tail_shape).permute(
         0, *range(2, 2 + len(tail_shape)), 1
     )
@@ -57,7 +75,7 @@ def knn_indices(query: jt.Var, reference: jt.Var, k: int) -> Tuple[jt.Var, jt.Va
         reference = reference.float32()
     # ``jt.misc.knn`` is a CUDA custom operator.  The pinned ACL backend has
     # no ACL KNN implementation, while the regular pairwise distance/topk
-    # composition is supported and stays on the selected ACL device.
+    # composition is supported with the ACL flag still selected.
     if query.shape[2] == 3 and not getattr(jt.flags, "use_acl", 0):
         distances, indices = jt.misc.knn(query, reference, k)
     else:

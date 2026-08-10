@@ -607,7 +607,7 @@ def get_knn_idx(x, y, k, offset=0):
     return: (B, N, k)
     """
     K = k + offset
-    if x.shape[-1] == 3:
+    if x.shape[-1] == 3 and not getattr(jt.flags, "use_acl", 0):
         _, idx = jt.misc.knn(x, y, K)
     else:
         # Keep this reduction fused: materializing BxNxMxC feature deltas is
