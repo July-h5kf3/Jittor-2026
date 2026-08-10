@@ -57,6 +57,42 @@ python main.py doctor --deep
 
 `main.py` 会在检测到 Conda CUDA Toolkit 时把环境 `bin/` 加入 `PATH`，并在需要时创建 `lib64 -> lib` 兼容链接；这是 Jittor 1.3.11 在 Conda CUDA 12.4 布局下查找 `libcudart.so` 所需的兼容处理。首次运行会编译 CUDA 算子；selective scan 支持 float32、SSM state 数 1～32，冻结网络使用 `d_state=16`。
 
+### Ascend ACL 单卡正确性验证
+
+Ascend 路径是单 NPU correctness reference，要求 CANN 9.1（当前容器为
+`/usr/local/Ascend/cann-9.1.0-beta.1`）、Ascend 910，以及完整固定的 Jittor
+提交 `06f5d3d271555682c95aa3505518f47eeab2bd9c`。不要在远端从 GitHub 拉取
+Jittor：先在可联网的本地机器准备离线 bundle，再用 rsync 传输到远端。
+
+```bash
+# 本地：只需在准备离线包时访问 GitHub；目录必须是新目录
+scripts/prepare_ascend_bundle.sh /path/to/track2-ascend-bundle
+
+# 本地：把固定 Jittor checkout 与 aarch64 wheels 放到远端离线位置
+rsync -az /path/to/track2-ascend-bundle/jittor-06f5d3d271555682c95aa3505518f47eeab2bd9c/ \
+  zhiyuan-huawei:/data/ldc/vendor/jittor-06f5d3d271555682c95aa3505518f47eeab2bd9c/
+rsync -az /path/to/track2-ascend-bundle/wheels/ \
+  zhiyuan-huawei:/data/ldc/packages/track2-ascend/
+
+# 本地优先修改并测试代码；再同步项目到远端，远端不依赖 GitHub
+scripts/sync_ascend.sh
+
+# 在 flagtree-dev-ldc 容器中执行一次离线安装和 ACL 验证
+cd /data/ldc/Track2-new
+scripts/setup_ascend_env.sh
+source scripts/ascend_env.sh
+python main.py doctor --device acl --deep
+```
+
+`acl` 选择后以 `jt.flags.use_acl == 1` 判断实际 ACL 路由。固定 Jittor 中
+官方 `use_cuda` 是 ACL 内部设备 flag 的别名，因而可能同时显示为 `1`；这不
+表示应改用 CUDA。deep doctor 会保留 ACL 下的 selective-scan CPU reference
+→ selected backend forward/八项梯度比较，并运行缩小的 `DenoiseNet` 前向、
+反向、一次 SGD 和 checkpoint round-trip；它不会静默回退到 CPU。
+
+当前 ACL selective scan 是 correctness reference path。性能优化属于后续
+Milestone B，HCCL/多卡属于后续 Milestone C；本仓库不宣称多卡 Ascend 已完成。
+
 ## 3. 原始数据布局
 
 训练根目录必须能按 key 找到原始 OBJ：

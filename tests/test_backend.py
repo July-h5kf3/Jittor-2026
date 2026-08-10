@@ -93,6 +93,10 @@ class FakeJittor:
         self.world_size = 1
         self.in_mpi = False
 
+    @staticmethod
+    def set_global_seed(_seed):
+        pass
+
 
 class SparseJittor:
     def __init__(self):
@@ -108,6 +112,39 @@ class SparseJittor:
 
 
 class BackendTests(unittest.TestCase):
+    def test_reduced_model_gradient_targets_exclude_batchnorm_running_buffers(self):
+        smoke = load_smoke_module()
+        inputs = object()
+        output_weight = object()
+        model = types.SimpleNamespace(
+            feature_nets=[types.SimpleNamespace(linear3=types.SimpleNamespace(weight=output_weight))]
+        )
+
+        self.assertEqual(
+            smoke.reduced_model_gradient_targets(inputs, model),
+            [inputs, output_weight],
+        )
+
+    def test_reduced_model_checkpoint_waits_for_loaded_acl_parameters(self):
+        smoke = load_smoke_module()
+        source = pathlib.Path(smoke.__file__).read_text(encoding="utf-8")
+        load_index = source.index("restored.load_parameters")
+        sync_index = source.index("jt_module.sync_all()", load_index)
+
+        self.assertLess(load_index, sync_index)
+
+    def test_reduced_model_input_makes_every_knn_neighbour_unambiguous(self):
+        smoke = load_smoke_module()
+        points = smoke.model_inputs()
+
+        self.assertEqual(points.shape, (1, 5, 3))
+
+    def test_reduced_model_checkpoint_uses_measured_acl_float32_tolerance(self):
+        smoke = load_smoke_module()
+        source = pathlib.Path(smoke.__file__).read_text(encoding="utf-8")
+
+        self.assertIn("rtol=1e-3, atol=5e-5", source)
+
     def test_selective_scan_prefers_reference_when_acl_and_cuda_are_enabled(self):
         jittor = types.ModuleType("jittor")
         jittor.Var = object
@@ -150,6 +187,9 @@ class BackendTests(unittest.TestCase):
                 return self.size
 
         class Model:
+            def __init__(self, **_kwargs):
+                pass
+
             def state_dict(self):
                 return {
                     str(index): Parameter(16278412 if index == 0 else 0)
@@ -176,7 +216,17 @@ class BackendTests(unittest.TestCase):
             smoke,
             "run_scan",
             return_value=(np.array([1.0]), [np.array([1.0])] * 8),
-        ) as run_scan, mock.patch("sys.stdout", io.StringIO()):
+        ) as run_scan, mock.patch.object(
+            smoke,
+            "run_acl_model_acceptance",
+            return_value={
+                "input_shape": [1, 8, 3],
+                "output_shape": [1, 8, 3],
+                "parameter_count": 16278412,
+                "optimizer_update": {"changed": True, "parameter_names": ["0"]},
+                "checkpoint_roundtrip": True,
+            },
+        ), mock.patch("sys.stdout", io.StringIO()):
             smoke.main(["--device", "acl"])
 
         devices = [call.args[1] for call in run_scan.call_args_list]
@@ -195,6 +245,9 @@ class BackendTests(unittest.TestCase):
                 return self.size
 
         class Model:
+            def __init__(self, **_kwargs):
+                pass
+
             def state_dict(self):
                 return {
                     str(index): Parameter(16278412 if index == 0 else 0)
@@ -237,6 +290,9 @@ class BackendTests(unittest.TestCase):
                 return self.size
 
         class Model:
+            def __init__(self, **_kwargs):
+                pass
+
             def state_dict(self):
                 return {
                     str(index): Parameter(16278412 if index == 0 else 0)
@@ -284,6 +340,9 @@ class BackendTests(unittest.TestCase):
                 return self.size
 
         class Model:
+            def __init__(self, **_kwargs):
+                pass
+
             def state_dict(self):
                 return {
                     str(index): Parameter(16278412 if index == 0 else 0)
@@ -326,6 +385,9 @@ class BackendTests(unittest.TestCase):
                 return self.size
 
         class Model:
+            def __init__(self, **_kwargs):
+                pass
+
             def state_dict(self):
                 return {
                     str(index): Parameter(16278412 if index == 0 else 0)
@@ -359,6 +421,16 @@ class BackendTests(unittest.TestCase):
             smoke,
             "run_scan",
             return_value=(np.array([1.0]), [np.array([1.0])] * 8),
+        ), mock.patch.object(
+            smoke,
+            "run_acl_model_acceptance",
+            return_value={
+                "input_shape": [1, 8, 3],
+                "output_shape": [1, 8, 3],
+                "parameter_count": 16278412,
+                "optimizer_update": {"changed": True, "parameter_names": ["0"]},
+                "checkpoint_roundtrip": True,
+            },
         ), mock.patch("sys.stdout", io.StringIO()):
             smoke.main(["--device", "acl"])
 

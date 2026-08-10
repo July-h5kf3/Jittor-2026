@@ -2,7 +2,10 @@
 """Small Jittor model/operator smoke test; no external data or weights required."""
 
 import argparse
+import json
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 import numpy as np
@@ -10,7 +13,7 @@ import numpy as np
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))
-from plr3d.backend import add_device_argument, configure_device
+from plr3d.backend import add_device_argument, configure_device, device_status
 
 
 def parse_args(argv=None):
@@ -52,6 +55,95 @@ def run_scan(arrays, device, custom, jt_module, custom_scan, reference_scan):
     return output.numpy(), [gradient.numpy() for gradient in gradients]
 
 
+def model_inputs(seed=20260810):
+    """Return a deterministic cloud whose KNN=4 neighbourhood is complete."""
+    rng = np.random.RandomState(seed)
+    return rng.normal(loc=0.0, scale=0.1, size=(1, 5, 3)).astype(np.float32)
+
+
+def reduced_model_gradient_targets(inputs, model):
+    """Request only differentiable model state, never BatchNorm running buffers."""
+    return [inputs, model.feature_nets[0].linear3.weight]
+
+
+def run_acl_model_acceptance(model, model_type, jt_module):
+    """Exercise one real ACL training update and a model checkpoint round trip."""
+    from jittor import optim
+
+    if int(jt_module.flags.use_acl) != 1:
+        raise AssertionError("ACL model smoke must start with ACL enabled")
+    inputs_np = model_inputs()
+    inputs = jt_module.array(inputs_np).float32()
+    model.train()
+    output = model(inputs)
+    if tuple(output.shape) != tuple(inputs_np.shape):
+        raise AssertionError(
+            "reduced model changed shape {} -> {}".format(
+                tuple(inputs_np.shape), tuple(output.shape)
+            )
+        )
+    output_np = output.numpy()
+    if not np.isfinite(output_np).all():
+        raise AssertionError("reduced model output is not finite")
+
+    loss = (output ** 2).mean()
+    gradient_targets = reduced_model_gradient_targets(inputs, model)
+    gradients = jt_module.grad(loss, gradient_targets)
+    if len(gradients) != len(gradient_targets):
+        raise AssertionError("reduced model returned an incomplete gradient list")
+    gradient_arrays = [gradient.numpy() for gradient in gradients]
+    if not all(np.isfinite(gradient).all() for gradient in gradient_arrays):
+        raise AssertionError("reduced model gradient is not finite")
+    if not any(np.any(gradient != 0.0) for gradient in gradient_arrays):
+        raise AssertionError("reduced model gradients are all zero")
+
+    before = {
+        name: value.numpy().copy() for name, value in model.state_dict().items()
+    }
+    optimizer = optim.SGD(gradient_targets[1:], lr=1e-3)
+    optimizer.zero_grad()
+    optimizer.backward(loss)
+    optimizer.step()
+    jt_module.sync_all()
+    after = {name: value.numpy() for name, value in model.state_dict().items()}
+    if not all(np.isfinite(value).all() for value in after.values()):
+        raise AssertionError("reduced model parameters are not finite after SGD")
+    changed = [
+        name for name, value in after.items() if not np.array_equal(before[name], value)
+    ]
+    if not changed:
+        raise AssertionError("SGD did not update any reduced model parameter")
+
+    model.eval()
+    pre_save = model(inputs)
+    pre_save_np = pre_save.numpy()
+    with tempfile.TemporaryDirectory() as directory:
+        checkpoint_path = str(Path(directory) / "denoise_acl_smoke.pkl")
+        jt_module.save({"state_dict": model.state_dict()}, checkpoint_path)
+        restored = model_type(
+            frame_knn=model.frame_knn,
+            num_modules=model.num_modules,
+            noise_decay=model.noise_decay,
+        )
+        restored.load_parameters(jt_module.load(checkpoint_path)["state_dict"])
+        jt_module.sync_all()
+        restored.eval()
+        post_load_np = restored(inputs).numpy()
+    # With all K=4 neighbours present, the measured ACL float32 drift is <=3.03e-5.
+    np.testing.assert_allclose(post_load_np, pre_save_np, rtol=1e-3, atol=5e-5)
+    if int(jt_module.flags.use_acl) != 1:
+        raise AssertionError("ACL model smoke must leave ACL enabled")
+    return {
+        "input_shape": list(inputs_np.shape),
+        "output_shape": list(output.shape),
+        "parameter_count": int(
+            sum(value.numel() for value in model.state_dict().values())
+        ),
+        "optimizer_update": {"changed": True, "parameter_names": changed},
+        "checkpoint_roundtrip": True,
+    }
+
+
 def main(argv=None):
     args = parse_args(argv)
     import jittor as jt
@@ -59,11 +151,13 @@ def main(argv=None):
     from plr3d.models import DenoiseNet
     from plr3d.ops.selective_scan import selective_scan, selective_scan_reference
 
+    started = time.perf_counter()
     configure_device(args.device, jt)
-    model = DenoiseNet()
+    jt.set_global_seed(20260810)
+    np.random.seed(20260810)
+    model = DenoiseNet(frame_knn=4, num_modules=1)
     state = model.state_dict()
-    assert len(state) == 1280, len(state)
-    assert sum(value.numel() for value in state.values()) == 16278412
+    parameter_count = int(sum(value.numel() for value in state.values()))
 
     arrays = scan_inputs()
     plan = scan_validation_plan(args.device)
@@ -96,7 +190,22 @@ def main(argv=None):
         # In the pinned Jittor source, compiler.py aliases use_acl to use_cuda.
         # use_cuda is therefore an ACL internal device flag, not CUDA routing.
         assert bool(jt.flags.use_acl), "ACL smoke must leave ACL enabled"
-    print("JITTOR_SMOKE_OK", len(state), sum(value.numel() for value in state.values()))
+        model_result = run_acl_model_acceptance(model, DenoiseNet, jt)
+    else:
+        model_result = {
+            "input_shape": None,
+            "output_shape": None,
+            "parameter_count": parameter_count,
+            "optimizer_update": False,
+            "checkpoint_roundtrip": False,
+        }
+    report = {
+        "device_status": device_status(args.device, jt),
+        "elapsed_seconds": round(time.perf_counter() - started, 6),
+        **model_result,
+    }
+    print(json.dumps(report, sort_keys=True))
+    print("JITTOR_SMOKE_OK", len(state), parameter_count)
 
 
 if __name__ == "__main__":
