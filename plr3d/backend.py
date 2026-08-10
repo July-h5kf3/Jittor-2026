@@ -28,9 +28,10 @@ def configure_device(device, jt_module=None):
         if not getattr(compiler, "has_acl", False):
             raise BackendError("ACL backend is unavailable")
         if not hasattr(jt_module.flags, "use_acl"):
-            raise BackendError("ACL backend is unavailable: Jittor has no use_acl flag")
+            raise BackendError("Jittor does not expose the ACL device flag")
 
-    jt_module.flags.use_acl = int(device == "acl")
+    if hasattr(jt_module.flags, "use_acl"):
+        jt_module.flags.use_acl = int(device == "acl")
     jt_module.flags.use_cuda = int(device == "cuda")
 
 

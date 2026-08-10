@@ -7,6 +7,13 @@ class Flags:
         self.use_acl = 0
 
 
+class FlagsWithoutAcl:
+    __slots__ = ("use_cuda",)
+
+    def __init__(self):
+        self.use_cuda = 0
+
+
 class Compiler:
     def __init__(self, has_cuda=True, has_acl=True):
         self.has_cuda = has_cuda
@@ -64,10 +71,33 @@ class BackendTests(unittest.TestCase):
         from plr3d.backend import BackendError, configure_device
 
         jt = FakeJittor()
-        del jt.flags.use_acl
+        jt.flags = FlagsWithoutAcl()
 
-        with self.assertRaisesRegex(BackendError, "ACL backend is unavailable"):
+        with self.assertRaisesRegex(
+            BackendError, "Jittor does not expose the ACL device flag"
+        ):
             configure_device("acl", jt)
+
+    def test_cpu_allows_jittor_without_an_acl_flag(self):
+        from plr3d.backend import configure_device
+
+        jt = FakeJittor()
+        jt.flags = FlagsWithoutAcl()
+        jt.flags.use_cuda = 1
+
+        configure_device("cpu", jt)
+
+        self.assertEqual(jt.flags.use_cuda, 0)
+
+    def test_cuda_allows_jittor_without_an_acl_flag(self):
+        from plr3d.backend import configure_device
+
+        jt = FakeJittor()
+        jt.flags = FlagsWithoutAcl()
+
+        configure_device("cuda", jt)
+
+        self.assertEqual(jt.flags.use_cuda, 1)
 
     def test_status_reports_backend_environment_and_distributed_state(self):
         from plr3d.backend import device_status
