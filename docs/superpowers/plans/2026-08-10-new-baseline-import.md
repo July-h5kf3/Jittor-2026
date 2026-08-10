@@ -118,6 +118,7 @@ bsdtar -xf /Users/lorn/Downloads/contest2_NKAI_031.zip -C "$staging_dir"
     | sort
 ) > "$archive_manifest"
 find . -type f \
+  ! -path './.git' \
   ! -path './.git/*' \
   ! -path './docs/superpowers/*' \
   ! -path './environment.yaml' \

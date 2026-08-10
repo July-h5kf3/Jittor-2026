@@ -1,0 +1,13 @@
+PLR-003 Jittor competition review source package
+
+This package contains a Jittor-native competition port and a trimmed Jittor
+StraightPCF baseline subtree. It contains no model weights, datasets or
+prediction results.
+
+Academic/source acknowledgements:
+- 3DMambaIPF (Zhou et al., AAAI 2025), https://github.com/TsingyuanChou/3DMambaIPF
+- Mamba (Gu and Dao), https://github.com/state-spaces/mamba (Apache-2.0 upstream)
+- IterativePFN, https://github.com/ddsediri/IterativePFN (MIT upstream)
+- Jittor, https://github.com/Jittor/jittor
+
+See LICENSES.md for scope and detailed attribution.
