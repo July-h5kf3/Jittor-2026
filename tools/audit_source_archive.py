@@ -61,7 +61,11 @@ def sha256(path: Path) -> str:
 def audit_tree(root: Path):
     errors = []
     files = []
-    for path in sorted(item for item in root.rglob("*") if item.is_file()):
+    for path in sorted(
+        item
+        for item in root.rglob("*")
+        if item.is_file() and ".git" not in item.relative_to(root).parts
+    ):
         relative = path.relative_to(root).as_posix()
         if "__pycache__" in path.parts or path.suffix.lower() in FORBIDDEN_SUFFIXES:
             errors.append(f"forbidden artifact: {relative}")
