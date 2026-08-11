@@ -504,7 +504,7 @@ git commit -m "feat: add ACL selective scan reference path"
 - The activated runtime reported Python 3.11.15 on aarch64, Jittor 1.3.11.0 from the pinned checkout, CANN 9.1 at `/usr/local/Ascend/cann-9.1.0-beta.1`, `tikcc_path=/usr/local/Ascend/cann-9.1.0-beta.1/bin/ccec`, and `has_acl=1`.
 - After ACL configuration the real flags were `(use_acl, use_cuda)=(1,1)`. At this pinned Jittor commit, `use_acl` is an alias of the generic `use_cuda` device flag; the dual-flags routing regression test verifies that selective scan still chooses the ACL reference path and never calls the CUDA custom operator.
 - `/data/ldc/envs/track2-ascend/bin/python /data/ldc/Track2-new/tests/smoke_jittor.py --device acl` exited 0 and ended with `JITTOR_SMOKE_OK 1280 16278412`. The smoke compared the selective-scan forward output and all eight gradients with the Task 5 tolerances.
-- This evidence completes only Task 5. Final doctor, primitive-matrix, reduced-model, optimizer, and checkpoint evidence remains assigned to Tasks 7 and 8; Task 6 and Task 7 are not marked complete here.
+- This evidence completes only Task 5. The primitive compatibility matrix belongs to Task 6; the deep doctor, reduced-model, optimizer, and checkpoint acceptance belong to Task 7; and the aggregate final local/remote evidence belongs to Task 8. Task 6 and Task 7 are not marked complete here.
 
 ## Task 6: ACL Primitive Compatibility Matrix
 
@@ -695,7 +695,7 @@ git commit -m "feat: complete single-NPU Ascend correctness smoke"
 **Files:**
 - Modify: `docs/superpowers/plans/2026-08-10-ascend-single-npu.md`
 
-- [ ] **Step 1: Run final local verification**
+- [x] **Step 1: Run final local verification**
 
 ```bash
 python3 -m compileall -q .
@@ -706,14 +706,14 @@ git diff --check origin/new...HEAD
 
 Expected: all local checks pass.
 
-- [ ] **Step 2: Push and synchronize the validated tree**
+- [x] **Step 2: Push and synchronize the validated tree**
 
 ```bash
 git push origin new
 scripts/sync_ascend.sh
 ```
 
-- [ ] **Step 3: Run final remote evidence**
+- [x] **Step 3: Run final remote evidence**
 
 Inside `flagtree-dev-ldc` with `scripts/ascend_env.sh` sourced:
 
@@ -723,7 +723,7 @@ python main.py doctor --device acl --deep
 python -m unittest -v tests.test_acl_primitives
 ```
 
-- [ ] **Step 4: Record results and commit the plan status**
+- [x] **Step 4: Record results and commit the plan status**
 
 Record the Jittor SHA, CANN path, `has_acl`, primitive test count, model-smoke result, elapsed time, and explicitly deferred performance/HCCL work in this plan. Then run:
 
@@ -734,3 +734,11 @@ git push origin new
 ```
 
 Milestone A is complete only when both final local checks and remote ACL evidence pass. Selective-scan optimization, KNN optimization, and HCCL enablement remain separate plans.
+
+### Task 8 Final Verification Evidence — 2026-08-11
+
+- Fresh local gate at `a0878c6d0e010794b9891479e3ffd4565ba922de`: `python3 -m compileall -q .` exited 0; the relevant unittest command ran 60 tests with 54 passed and 6 clean skips (the six ACL primitive cases are skipped locally because ACL is unavailable); source policy, backend, environment-contract, device-wiring, and Task 7 smoke-schema checks are included. `python3 tools/audit_source_archive.py --root .` exited 0 with `audit_pass=true`, 81 files, and 2,985,401 source bytes. `git diff --check origin/new...HEAD` exited 0.
+- First ordinary push exited 0 and advanced `origin/new` from `2061db3ba7a9acf2d85bb8689b101f7043ea4863` to `a0878c6d0e010794b9891479e3ffd4565ba922de`; `scripts/sync_ascend.sh` then exited 0 and copied that validated tree to `zhiyuan-huawei:/data/ldc/Track2-new`.
+- The fresh final gate ran inside `flagtree-dev-ldc`, after sourcing `scripts/ascend_env.sh`. It reported aarch64, Python 3.11.15, Jittor 1.3.11.0 at `/data/ldc/vendor/jittor-06f5d3d271555682c95aa3505518f47eeab2bd9c/python/jittor/__init__.py`, clean pinned SHA `06f5d3d271555682c95aa3505518f47eeab2bd9c`, CANN `/usr/local/Ascend/cann-9.1.0-beta.1`, and tikcc `/usr/local/Ascend/cann-9.1.0-beta.1/bin/ccec`. `has_acl=true`; the configured flags were `use_acl=true` and the documented Jittor alias `use_cuda=true`; rank/world-size were `0/1`.
+- On that remote runtime, `python -m unittest tests.test_source_policy tests.test_routing` exited 0 with 5 tests passed, and `python -m unittest -v tests.test_acl_primitives` exited 0 with all 6 primitive cases passed. `python main.py doctor --device acl --deep` exited 0. Its smoke JSON was machine-parsed with the expected field types: device `acl`, `has_acl=true`, `use_acl=true`, `model_acceptance_executed=true`, input/output shapes `[1, 5, 3]`, `parameter_count=4069603`, optimizer object `changed=true` with `parameter_names=["feature_nets.0.linear3.weight"]`, `checkpoint_roundtrip=true`, `checkpoint_max_abs_diff=0.0`, and `elapsed_seconds=3.947857`.
+- Milestone A (single-NPU Ascend correctness) is complete. Selective-scan performance, KNN performance, and HCCL 2/4/8-card execution remain deferred to separate Milestone B/C plans.
