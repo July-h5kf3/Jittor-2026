@@ -34,7 +34,9 @@
 | 参考校正 | VM 位移以固定 −0.01 系数修正中位数 | [整体方法](METHOD.md) |
 | Jittor 实现 | `jt.code` 选择性扫描前向/反向、状态检查点重算、高维 KNN | [算子目录](solution/code/mamba/jittor_core/plr3d/ops) |
 
-$$\widehat X = \operatorname{median}_{\mathrm{coord}}(M_{48K},M_{60K},I_{1024}) - 0.01\,(V-X)$$
+$$
+\hat{X} = \mathrm{median}_{\mathrm{coord}}(M_{48K},M_{60K},I_{1024}) - 0.01 (V-X)
+$$
 
 这里的中位数只包含三个主体预测；VM 不参与中位数。所有输出保持输入点数和原始索引。
 
