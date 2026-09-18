@@ -1,0 +1,16 @@
+name: Release checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  cpu-tooling:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - run: pip install numpy==1.24.4
+      - run: python -m compileall -q solution/code solution/fusion solution/tools
+      - run: for script in solution/scripts/*.sh; do bash -n "$script" || exit 1; done
+      - run: python -m unittest discover -s solution/tests -v

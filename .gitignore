@@ -47,3 +47,11 @@ bench_logs/
 *.tar
 *.tar.gz
 train.pid
+
+# Final release runtime artifacts
+solution/preds/
+solution/logs/
+solution/jittor_home/
+solution/test_200_keys.txt
+solution/result_audit.json
+*.partial

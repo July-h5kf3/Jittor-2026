@@ -1,0 +1,16 @@
+{
+  "framework": "jittor",
+  "epoch": 10,
+  "checkpoint": "denoisenet-jittor-b-epoch10.npz",
+  "epochs": 10,
+  "lr": 3e-06,
+  "patch_size": 1000,
+  "patch_ratio": 1.2,
+  "patches_per_mesh": 4,
+  "metric_weight": 0.2,
+  "metric_warmup_epochs": 2.0,
+  "noise_decay": 4.0,
+  "grad_clip": 1.0,
+  "seed": 20260812,
+  "vertex_samples": 1024
+}

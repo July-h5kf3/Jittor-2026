@@ -1,0 +1,26 @@
+{
+  "release": "v1.0.0",
+  "asset": "nkai-final-weights.zip",
+  "files": [
+    {
+      "path": "weights/ipfn_1024/denoisenet-jittor-b-epoch10.npz",
+      "bytes": 12960494,
+      "sha256": "72ae0220dcb46d61ae010e9a03c46938f4fae78752f2de6a820f2ee18fd6a333"
+    },
+    {
+      "path": "weights/mamba_mix75_s48000/step-048000-jittor.pkl",
+      "bytes": 65231587,
+      "sha256": "e8b1214ce44e3685d3110dabd25189216203d89b5893b9622879bf7153985a46"
+    },
+    {
+      "path": "weights/mamba_v8192_s060000/step-060000-jittor.pkl",
+      "bytes": 65231656,
+      "sha256": "a76d60b8fe73268b5b4ba714711d22c67e2491394124c24e0123b2f326704ea4"
+    },
+    {
+      "path": "weights/vm_fixed/fixed_v8192_epoch10.npz",
+      "bytes": 951942,
+      "sha256": "2f62b02039f7bc27bea352c29e6008fc553d67527fee9cd9a0bc11e750341467"
+    }
+  ]
+}

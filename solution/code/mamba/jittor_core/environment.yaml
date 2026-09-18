@@ -1,0 +1,21 @@
+name: nkai-track2-plr003
+channels:
+  - nvidia/label/cuda-12.4.0
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10.14
+  - pip=24.2
+  - numpy=1.24.4
+  - pandas=2.2.3
+  - scipy=1.15.1
+  - scikit-learn=1.7.1
+  - cuda-version=12.4
+  - cuda-toolkit=12.4.0
+  - cudnn=8.9.7.29
+  - pip:
+      - jittor==1.3.11.0
+      - git+https://github.com/AlgRUC/JittorGeometric.git@ff7d8ffac7bf3d95cc1962e091c52dc5737492d4
+# The submitted PLR-003 runtime imports only Jittor and NumPy.
+# Pandas, SciPy, scikit-learn and JittorGeometric are included here to match
+# the organizer's full inspection environment; they are not used by the model.

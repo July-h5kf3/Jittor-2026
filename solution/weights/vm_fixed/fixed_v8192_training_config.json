@@ -1,0 +1,23 @@
+{
+  "framework": "Jittor",
+  "model": "StraightPCF VM",
+  "variant": "fixed_v8192",
+  "epochs": 10,
+  "base_lr": 5e-05,
+  "min_lr": 5e-07,
+  "warmup_steps": 500,
+  "grad_clip": 1.0,
+  "seed": 20260819,
+  "optimizer": "Adam",
+  "laplace_scale": 0.01,
+  "vertex_samples": 8192,
+  "patch_size": 1000,
+  "patches_per_mesh": 4,
+  "dsm_sigma": 0.01,
+  "train_points": 128,
+  "frame_knn": 32,
+  "embedding_dim": 256,
+  "decoder_hidden_dim": 64,
+  "weight_decay": 0.0,
+  "precision": "float32"
+}

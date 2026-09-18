@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "Please cite the repository and the original models you use."
+title: "NKAI: Multi-model Point Cloud Denoising in Jittor"
+type: software
+authors:
+  - name: "NKAI, Nankai University"
+repository-code: "https://github.com/July-h5kf3/Jittor-2026"
+url: "https://github.com/July-h5kf3/Jittor-2026"
+version: 1.0.0
+date-released: 2026-09-18
