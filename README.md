@@ -5,26 +5,11 @@
 <h2 align="center">多模型协同的三维点云降噪</h2>
 <p align="center">🏛️ 南开大学 NKAI &nbsp; · &nbsp; 🏆 第六届计图挑战赛 · 赛道二第 10 名</p>
 
-<p align="center">
-  <a href="https://github.com/July-h5kf3/Jittor-2026"><img src="https://img.shields.io/badge/GitHub-Source-24212A?style=for-the-badge&amp;logo=github&amp;logoColor=white" alt="GitHub source"></a>
-  <a href="https://gitlink.org.cn/Searein/Jittor-2026"><img src="https://img.shields.io/badge/GitLink-Mirror-258E87?style=for-the-badge&amp;logo=git&amp;logoColor=white" alt="GitLink mirror"></a>
-  <a href="https://github.com/July-h5kf3/Jittor-2026/releases/tag/v1.0.0"><img src="https://img.shields.io/badge/Models-v1.0.0-70145C?style=for-the-badge&amp;logo=files&amp;logoColor=white" alt="Model release v1.0.0"></a>
-</p>
+<p align="center"> <a href="https://github.com/July-h5kf3/Jittor-2026"><img src="https://img.shields.io/badge/GitHub-Source-24212A?style=for-the-badge&amp;logo=github&amp;logoColor=white" alt="GitHub source"></a> <a href="https://gitlink.org.cn/Searein/Jittor-2026"><img src="https://img.shields.io/badge/GitLink-Mirror-258E87?style=for-the-badge&amp;logo=git&amp;logoColor=white" alt="GitLink mirror"></a> <a href="https://github.com/July-h5kf3/Jittor-2026/releases/tag/v1.0.0"><img src="https://img.shields.io/badge/Models-v1.0.0-70145C?style=for-the-badge&amp;logo=files&amp;logoColor=white" alt="Model release v1.0.0"></a> </p>
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Jittor-1.3.11-70145C?style=flat-square" alt="Jittor 1.3.11">
-  <img src="https://img.shields.io/badge/Python-3.10-397FA3?style=flat-square&amp;logo=python&amp;logoColor=white" alt="Python 3.10">
-  <img src="https://img.shields.io/badge/Checkpoints-4_members-258E87?style=flat-square" alt="Four member checkpoints">
-  <a href="https://github.com/July-h5kf3/Jittor-2026/actions/workflows/release-checks.yml"><img src="https://github.com/July-h5kf3/Jittor-2026/actions/workflows/release-checks.yml/badge.svg" alt="Release checks status"></a>
-</p>
+<p align="center"> <img src="https://img.shields.io/badge/Jittor-1.3.11-70145C?style=flat-square" alt="Jittor 1.3.11"> <img src="https://img.shields.io/badge/Python-3.10-397FA3?style=flat-square&amp;logo=python&amp;logoColor=white" alt="Python 3.10"> <img src="https://img.shields.io/badge/Checkpoints-4_members-258E87?style=flat-square" alt="Four member checkpoints"> <a href="https://github.com/July-h5kf3/Jittor-2026/actions/workflows/release-checks.yml"><img src="https://github.com/July-h5kf3/Jittor-2026/actions/workflows/release-checks.yml/badge.svg" alt="Release checks status"></a> </p>
 
-<p align="center">
-  <a href="#method">🧠 方法</a> &nbsp; / &nbsp;
-  <a href="#quickstart">🚀 快速开始</a> &nbsp; / &nbsp;
-  <a href="docs/REPRODUCE.md">📖 复现文档</a> &nbsp; / &nbsp;
-  <a href="docs/WEIGHTS.md">📦 模型权重</a> &nbsp; / &nbsp;
-  <a href="docs/TRAINING.md">🔧 训练配置</a>
-</p>
+<p align="center"> <a href="#method">🧠 方法</a> &nbsp; / &nbsp; <a href="#quickstart">🚀 快速开始</a> &nbsp; / &nbsp; <a href="docs/REPRODUCE.md">📖 复现文档</a> &nbsp; / &nbsp; <a href="docs/WEIGHTS.md">📦 模型权重</a> &nbsp; / &nbsp; <a href="docs/TRAINING.md">🔧 训练配置</a> </p>
 
 ---
 
