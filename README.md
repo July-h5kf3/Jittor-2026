@@ -1,30 +1,42 @@
-<h1 align="center">NKAI · Point Cloud Denoising</h1>
-<p align="center"><b>多模型协同的三维点云降噪 · Jittor 2026</b><br>
-南开大学 NKAI ｜ 第六届计图人工智能挑战赛 · 赛道二 · 第 10 名</p>
+<a id="readme-top"></a>
+
+<p align="center"><img src="docs/assets/banner.svg" width="100%" alt="NKAI · Point Cloud Denoising · Nankai University · Jittor 2026"></p>
+
+<h2 align="center">多模型协同的三维点云降噪</h2>
+<p align="center">🏛️ 南开大学 NKAI &nbsp; · &nbsp; 🏆 第六届计图挑战赛 · 赛道二第 10 名</p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Framework-Jittor_1.3.11-70145C?style=flat-square" alt="Jittor 1.3.11">
-  <img src="https://img.shields.io/badge/Python-3.10-397FA3?style=flat-square" alt="Python 3.10">
-  <img src="https://img.shields.io/badge/Track_2-Top_10-258E87?style=flat-square" alt="Track 2 Top 10">
-  <a href="https://github.com/July-h5kf3/Jittor-2026/releases/tag/v1.0.0"><img src="https://img.shields.io/badge/Checkpoints-4_members-70145C?style=flat-square" alt="Four checkpoints"></a>
+  <a href="https://github.com/July-h5kf3/Jittor-2026"><img src="https://img.shields.io/badge/GitHub-Source-24212A?style=for-the-badge&amp;logo=github&amp;logoColor=white" alt="GitHub source"></a>
+  <a href="https://gitlink.org.cn/Searein/Jittor-2026"><img src="https://img.shields.io/badge/GitLink-Mirror-258E87?style=for-the-badge&amp;logo=git&amp;logoColor=white" alt="GitLink mirror"></a>
+  <a href="https://github.com/July-h5kf3/Jittor-2026/releases/tag/v1.0.0"><img src="https://img.shields.io/badge/Models-v1.0.0-70145C?style=for-the-badge&amp;logo=files&amp;logoColor=white" alt="Model release v1.0.0"></a>
 </p>
 
 <p align="center">
-  <a href="#方法概览">方法概览</a> ·
-  <a href="#快速开始">快速开始</a> ·
-  <a href="docs/REPRODUCE.md">复现指南</a> ·
-  <a href="docs/WEIGHTS.md">模型权重</a> ·
-  <a href="docs/TRAINING.md">训练说明</a> ·
-  <a href="docs/THIRD_PARTY.md">引用与许可</a>
+  <img src="https://img.shields.io/badge/Jittor-1.3.11-70145C?style=flat-square" alt="Jittor 1.3.11">
+  <img src="https://img.shields.io/badge/Python-3.10-397FA3?style=flat-square&amp;logo=python&amp;logoColor=white" alt="Python 3.10">
+  <img src="https://img.shields.io/badge/Checkpoints-4_members-258E87?style=flat-square" alt="Four member checkpoints">
+  <a href="https://github.com/July-h5kf3/Jittor-2026/actions/workflows/release-checks.yml"><img src="https://github.com/July-h5kf3/Jittor-2026/actions/workflows/release-checks.yml/badge.svg" alt="Release checks status"></a>
 </p>
 
-<p align="center"><img src="docs/assets/architecture.png" width="100%" alt="Three denoising members feed a coordinate median; a fourth VM member supplies a negative 0.01 residual correction."></p>
+<p align="center">
+  <a href="#method">🧠 方法</a> &nbsp; / &nbsp;
+  <a href="#quickstart">🚀 快速开始</a> &nbsp; / &nbsp;
+  <a href="docs/REPRODUCE.md">📖 复现文档</a> &nbsp; / &nbsp;
+  <a href="docs/WEIGHTS.md">📦 模型权重</a> &nbsp; / &nbsp;
+  <a href="docs/TRAINING.md">🔧 训练配置</a>
+</p>
+
+---
 
 两个 **3DMambaIPF** 成员与一个 **IterativePFN** 提供主体预测，**StraightPCF VM** 提供参考位移。我们在 Jittor 上实现成员推理、重叠 Patch 软融合与逐坐标中位数融合，并固定小幅 VM 残差校正。
 
-> **当前发布**：最终方案源码、四成员 checkpoint、SHA-256 校验、复现脚本与训练配置说明。数据集通过赛事渠道获取。最终赛事排名：第 10 名。
+> 📌 **当前发布**：最终方案源码、四成员 checkpoint、SHA-256 校验、复现脚本与训练配置说明。数据集通过赛事渠道获取。最终赛事排名：第 10 名。
 
-## 方法概览
+<a id="method"></a>
+
+## 🧠 方法概览
+
+<p align="center"><img src="docs/assets/architecture.png" width="100%" alt="三个主体取逐坐标中位数，VM 通过负 0.01 残差完成校正"></p>
 
 | 层次 | 设计 | 实现入口 |
 |---|---|---|
@@ -40,12 +52,15 @@ $$
 
 这里的中位数只包含三个主体预测；VM 不参与中位数。所有输出保持输入点数和原始索引。
 
-## 快速开始
+<a id="quickstart"></a>
+
+## 🚀 快速开始
 
 目标环境为 **Linux + NVIDIA CUDA**，Python 3.10、Jittor 1.3.11.0。Windows 可用于阅读源码，CUDA 推理请使用 Linux 环境。
 
 ```bash
 git clone https://github.com/July-h5kf3/Jittor-2026.git
+# 国内镜像：git clone https://gitlink.org.cn/Searein/Jittor-2026.git
 cd Jittor-2026/solution
 
 conda create -n nkai-jittor python=3.10 -y
@@ -66,7 +81,7 @@ WORLD_MAMBA=1 WORLD_IPFN=1 WORLD_VM=1 bash scripts/run_reproduce.sh
 
 结果输出至 `solution/result.zip`，逐点预测位于 `solution/preds/`。提交打包器对应 200 个 `btest_*` 样本、每例 50,000 点；环境准备、分成员运行与自定义数据说明见[复现指南](docs/REPRODUCE.md)。
 
-## 四成员配置
+## 🧩 四成员配置
 
 | 成员 | 数据构造/作用 | 发布权重 |
 |---|---|---|
@@ -77,7 +92,10 @@ WORLD_MAMBA=1 WORLD_IPFN=1 WORLD_VM=1 bash scripts/run_reproduce.sh
 
 训练 patch 为 1,000 点；主体推理 patch 为 2,000 点。数据构造中的原始顶点数与 patch 大小是不同参数。训练入口、配置与准备步骤见[训练说明](docs/TRAINING.md)。
 
-## 仓库结构
+## 🗂️ 仓库结构
+
+<details>
+<summary><b>展开查看源码与文档目录</b></summary>
 
 ```text
 solution/                  当前最终方案
@@ -93,17 +111,24 @@ src/ · configs/ · scripts/  原仓库早期实验代码，保留供追溯
 
 根目录旧 `src/` 流程不是本次最终方案的运行入口。历史首页与方法文档见 [docs/history](docs/history)，实验记录见 [EXPERIMENTS.md](EXPERIMENTS.md)。
 
-## 发布与验证
+</details>
 
+## 📦 发布与验证
+
+- 🌐 源码平台：[GitHub](https://github.com/July-h5kf3/Jittor-2026) · [GitLink](https://gitlink.org.cn/Searein/Jittor-2026)。
 - [v1.0.0 权重发布](https://github.com/July-h5kf3/Jittor-2026/releases/tag/v1.0.0)：四个成员、训练元数据与校验清单。
 - CPU 检查：`python -m unittest discover -s solution/tests -v`。
 - 数据不入库，预测与编译缓存不入库；所有 checkpoint 以 manifest 定位和核验。
 - 有关错误或复现差异，请在 [Issues](https://github.com/July-h5kf3/Jittor-2026/issues) 提供环境、完整命令及报错。
 
-## 团队与引用
+## 🤝 团队与引用
 
 **NKAI · 南开大学**：李佳璞、刘迪乘、曲恒睿。
 
 感谢 [Jittor](https://github.com/Jittor/jittor)、[3DMambaIPF](https://github.com/TsingyuanChou/3DMambaIPF)、[IterativePFN](https://github.com/ddsediri/IterativePFN) 与 StraightPCF 的工作。本项目采用已有网络设计，并围绕 Jittor 实现、训练组织和推理融合进行整理与实现；不将参考模型结构作为本团队原创。
 
 NKAI 自有新增代码按 [MIT](LICENSE) 许可；第三方组件、数据和模型遵循各自适用条款。来源与学术引用见 [THIRD_PARTY.md](docs/THIRD_PARTY.md) 和 [CITATION.cff](CITATION.cff)。
+
+---
+
+<p align="center"><b>NKAI · Nankai University</b><br>Code, models and reproducible inference.<br><br><a href="#readme-top">↑ 返回顶部</a></p>
